@@ -23,6 +23,17 @@ pnpm build
 pnpm typecheck
 ```
 
+PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行一次
+`Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`。
+
+## 启动器
+
+双击桌面上的 **梵境 Vance** 图标，会打开一个已配好 Node / pnpm / Git 的终端，
+并进入本目录。也可以直接运行仓库里的 `start-dev.cmd`。
+
+窗口里的快捷命令：`t` 跑测试、`b` 构建、`k` 类型检查、`i` 装依赖、
+`s` git status、`l` 最近提交。
+
 ## 现在的状态
 
 - [x] workspace、TypeScript、Vitest、Turbo 跑通
