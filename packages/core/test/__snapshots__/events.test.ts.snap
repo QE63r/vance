@@ -1,0 +1,18 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`事件信封 > 字段集合一旦变化，快照即红 1`] = `
+[
+  "request_id",
+  "agent_id",
+  "project_id",
+  "timestamp",
+  "action_digest",
+  "effect_digest",
+  "nonce",
+  "expires_at",
+  "policy_version",
+  "signer",
+  "signature",
+  "parent_plan_id",
+]
+`;
