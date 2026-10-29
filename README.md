@@ -28,10 +28,12 @@ pnpm typecheck
 - [x] workspace、TypeScript、Vitest、Turbo 跑通
 - [x] core：信封 11 字段 + 四类事件的 zod schema + 快照测试
 - [x] adapter-base：fail-closed 的默认拒绝路径 + 单测
+- [x] git 仓库初始化，首次提交完成
 - [ ] 真实策略引擎（Deny > Approval > Allow 的完整规则）
 - [ ] adapter-claude / relay
 
 ## 环境备注
 
-- Node v24.21.0（计划书写的是 22 LTS，24 向下兼容，先按 24 走）
-- 未安装 git，仓库初始化留待补
+- Node v24.21.0（计划书写的是 22 LTS；24 向下兼容，先按 24 走，M2 接 node-pty 时再验证）
+- git 2.56.0.3（winget 安装）
+- 提交身份临时设为 `Vance Dev <dev@vance.local>`，可在 `git config` 里改
