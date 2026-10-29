@@ -5,7 +5,9 @@ rem  梵境 Vance 开发环境启动器
 rem  由桌面快捷方式调用：cmd /k start-dev.cmd
 rem ---------------------------------------------------------------
 
-set "PATH=C:\Program Files\nodejs;%APPDATA%\npm;C:\Program Files\Git\cmd;%PATH%"
+rem 不依赖继承来的 PATH（有的机器上它是空的），System32 显式放最前
+set "PATH=%SystemRoot%\System32;%SystemRoot%;C:\Program Files\nodejs;%APPDATA%\npm;C:\Program Files\Git\cmd;%PATH%"
+if defined PATH_EXTRA set "PATH=%PATH%;%PATH_EXTRA%"
 cd /d "%~dp0"
 
 echo.
@@ -23,6 +25,9 @@ echo.
 
 if /i "%~1"=="--check" goto :done
 
+where doskey >nul 2>nul
+if errorlevel 1 goto :nodoskey
+
 doskey t=pnpm.cmd test $*
 doskey b=pnpm.cmd build $*
 doskey k=pnpm.cmd typecheck $*
@@ -35,9 +40,17 @@ echo   快捷命令（仅本窗口有效）:
 echo     t  跑测试    b  构建    k  类型检查
 echo     i  装依赖    s  git status    l  最近提交
 echo.
-echo   提示: PowerShell 里直接敲 pnpm 可能被执行策略拦住，
-echo         改用 pnpm.cmd，或执行一次：
-echo         Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+goto :tips
+
+:nodoskey
+echo   提示: 本机找不到 doskey，快捷命令不可用。
+echo         直接用 pnpm.cmd test / build / typecheck 即可。
+echo.
+
+:tips
+echo   注: PowerShell 里直接敲 pnpm 可能被执行策略拦住，
+echo       改用 pnpm.cmd，或执行一次：
+echo       Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 echo.
 
 :done
