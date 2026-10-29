@@ -6,7 +6,7 @@ rem  由桌面快捷方式调用：cmd /k start-dev.cmd
 rem ---------------------------------------------------------------
 
 rem 不依赖继承来的 PATH（有的机器上它是空的），System32 显式放最前
-set "PATH=%SystemRoot%\System32;%SystemRoot%;C:\Program Files\nodejs;%APPDATA%\npm;C:\Program Files\Git\cmd;%PATH%"
+set "PATH=%SystemRoot%\System32;%SystemRoot%;C:\Program Files\nodejs;%APPDATA%\npm;C:\Program Files\Git\cmd;%LOCALAPPDATA%\Programs\Microsoft VS Code\bin;%PATH%"
 if defined PATH_EXTRA set "PATH=%PATH%;%PATH_EXTRA%"
 cd /d "%~dp0"
 
@@ -35,10 +35,11 @@ doskey i=pnpm.cmd install $*
 doskey s=git status $*
 doskey l=git log --oneline -10 $*
 doskey ..=cd ..
+doskey c=code . $*
 
 echo   快捷命令（仅本窗口有效）:
 echo     t  跑测试    b  构建    k  类型检查
-echo     i  装依赖    s  git status    l  最近提交
+echo     i  装依赖    s  git status    l  最近提交    c  VS Code
 echo.
 goto :tips
 
