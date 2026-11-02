@@ -233,11 +233,22 @@ export function pickAcpOption(
   decision: "allow" | "reject",
 ): string | undefined {
   const list = options ?? [];
-  const want = decision === "allow" ? "allow" : "reject";
-  const hit =
-    list.find((o) => String(o.kind ?? "").startsWith(want)) ??
-    list.find((o) => String(o.optionId ?? "").toLowerCase().includes(want));
-  return hit?.optionId;
+  const kind = (o: { kind?: string }) => String(o.kind ?? "").toLowerCase();
+  const id = (o: { optionId?: string }) => String(o.optionId ?? "").toLowerCase();
+
+  if (decision === "reject") {
+    return (
+      list.find((o) => kind(o).startsWith("reject")) ??
+      list.find((o) => id(o).includes("reject") || id(o).includes("deny"))
+    )?.optionId;
+  }
+
+  // 允许：按宽松度递增地找，最后退到"任何不是拒绝的选项"
+  return (
+    list.find((o) => kind(o).startsWith("allow")) ??
+    list.find((o) => /allow|approve|yes|once/.test(id(o))) ??
+    list.find((o) => !kind(o).startsWith("reject") && !/reject|deny/.test(id(o)))
+  )?.optionId;
 }
 
 /** 默认选项构造器（生产用），测试里可以注入固定值 */
