@@ -113,3 +113,10 @@ dir fixtures\raw
 Hook 脚本如果**崩溃**，Claude Code 的默认行为可能是**放行**。
 所以 `capture-hook.mjs` 里所有错误分支都强制 `deny`——这就是 fail-closed 的现场演示：
 不是"出错时尽量继续"，而是"出错时一定停下"。
+
+---
+
+> **⚠️ 本文档已作废（2026-11-02）**
+> 本机访问 api.anthropic.com 返回 403（地区限制），Claude Code 这条线暂停。
+> 第一个适配器改为 **opencode + ACP**，见仓库 `tools/acp-bridge.mjs`。
+> 本文保留，等哪天 Claude 可用时再回来接。
