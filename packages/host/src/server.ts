@@ -183,6 +183,13 @@ export class HostServer {
         } catch {
           return;
         }
+        // 页面要求重新同步：把权威历史再发一遍，修掉流式渲染可能漏掉的内容
+        if (msg?.type === "resync") {
+          if (this.history.length > 0) {
+            socket.send(JSON.stringify({ type: "history", items: this.history }));
+          }
+          return;
+        }
         if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
           this.promptHandler?.(msg.text.trim());
           return;
