@@ -117,8 +117,8 @@ export const ApprovalRequest = EventEnvelope.extend({
   facts: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
     .default({}),
-  /** 意图层（AI）生成的解释，非权威，仅展示 */
-  intent_summary: z.string().optional(),
+  // 这里故意没有 intent_summary（AI 推测意图）：
+  // 它要花钱、可能猜错，而事实句已经够人做判断。见 ADR-0004。
 }).strict();
 
 /**
@@ -148,12 +148,44 @@ export const ToolResult = EventEnvelope.extend({
 });
 
 /**
+ * 一个「步骤」的四个状态。
+ *
+ * [为什么需要这个] 审批是低频的（一天几次），进度是高频的（一直在看）。
+ * 用户真正想知道的是：它刚才做完了什么、现在在做什么、下一步是什么。
+ */
+export const StepStatus = z.enum(["pending", "running", "done", "failed"]);
+export type StepStatus = z.infer<typeof StepStatus>;
+
+/**
+ * 步骤。对应 Agent 的一次工具调用（或它自己声明的一个子任务）。
+ *
+ * 字段刻意保持"事实"：标题、类别、状态。没有"意图"、没有"建议"。
+ * 手机端据此渲染成一条清单：✓ 已完成 / ● 正在做 / ○ 待执行。
+ */
+export const Step = z.object({
+  /** 与 Agent 侧的 toolCallId 对应，用户能一路追到同一步 */
+  id: z.string().min(1),
+  /** 人话标题，例如「删除 data.csv」 */
+  title: z.string().min(1),
+  /** 类别：execute / edit / read / fetch …… 由 Agent 侧给出 */
+  kind: z.string().optional(),
+  status: StepStatus,
+});
+
+export type Step = z.infer<typeof Step>;
+
+/**
  * 状态更新。纯汇报，不产生新动作，宽容对待：多出的字段忽略即可。
+ *
+ * state 说整个会话怎么样；step 说当前这一步怎么样。两者分开，
+ * 因为"会话在跑"不代表"这一步成功"。
  */
 export const StatusUpdate = EventEnvelope.extend({
   type: z.literal("status_update"),
   state: z.enum(["idle", "running", "waiting", "suspended", "done", "error"]),
   detail: z.string().optional(),
+  /** 当前正在处理/刚结束的那一步；没有步骤概念时可省略 */
+  step: Step.optional(),
 });
 
 export const AgentEvent = z.discriminatedUnion("type", [
