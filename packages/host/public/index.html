@@ -169,6 +169,7 @@
   const stepEls = new Map();
   const bubbles = new Map();
   let ws = null, retry = 800, running = false, stickBottom = true, sawTask = false, ackTimer = null;
+  let replaying = false, approvalSeq = 0;
 
   /* ── 滚动：贴底时自动跟随，用户翻上去就不打扰 ── */
   window.addEventListener("scroll", () => {
@@ -246,7 +247,8 @@
 
     const kicker = document.createElement("div");
     kicker.className = "kicker";
-    kicker.textContent = "需要你批准";
+    approvalSeq += 1;
+    kicker.textContent = `需要你批准 · 第 ${approvalSeq} 次`;
 
     const action = document.createElement("div");
     action.className = "action";
@@ -448,10 +450,16 @@
     {
       switch (msg.type) {
         case "history":
+          replaying = true;
           feed.innerHTML = "";
           stepEls.clear();
           bubbles.clear();
-          for (const item of msg.items || []) dispatch(item);
+          approvalSeq = 0;
+          try {
+            for (const item of msg.items || []) dispatch(item);
+          } finally {
+            replaying = false;
+          }
           toBottom(true);
           break;
         case "hello":
@@ -473,14 +481,16 @@
           n.classList.add("notice");
           break;
         }
-        case "turn":
+        case "turn": {
+          const wasRunning = running;
           setRunning(msg.state === "running", msg.state);
-          if (msg.state !== "running") {
-            // 这一轮结束了，用服务端的权威历史重建一次：
-            // 流式渲染可能漏字（比如这次只显示了"已创建：`"），对账能修回来
-            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "resync" }));
+          // 只在「运行中 → 停下」这一瞬间对账一次。
+          // 否则重放历史里的 turn 消息会再触发 resync，形成死循环，把页面刷白。
+          if (wasRunning && msg.state !== "running" && !replaying && ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({ type: "resync" }));
           }
           break;
+        }
       }
     };
   }
