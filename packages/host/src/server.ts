@@ -157,6 +157,7 @@ export class HostServer {
     const http = createServer((req, res) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
       if (url.pathname === "/") {
+        console.log(`[host] 页面请求来自 ${req.socket.remoteAddress}`);
         // 每次请求都读文件：改页面不用重启服务，正在用的人刷新一下就是新的
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
         res.end(readFileSync(this.options.pagePath, "utf8"));
