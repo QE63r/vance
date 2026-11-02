@@ -47,9 +47,34 @@
     font-size: 15px; line-height: 1.5; margin: 10px 0 12px;
     word-break: break-all; background: #11181f; padding: 12px; border-radius: 10px;
     border: 1px solid var(--line);
+    white-space: pre-wrap;
   }
-  .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 13px; color: var(--dim); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--dim); }
+  .meta .tag {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    background: #141c24; border: 1px solid var(--line);
+    padding: 4px 9px; border-radius: 999px;
+  }
   .meta b { color: var(--text); font-weight: 500; }
+
+  /* 你交代的任务，一直挂在顶部：判断"这一步该不该做"，全靠它 */
+  .task {
+    border-left: 3px solid var(--accent);
+    background: #131b23;
+    padding: 10px 14px;
+    border-radius: 0 10px 10px 0;
+    margin-bottom: 16px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #c3ced8;
+  }
+  .task .label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: .08em;
+    color: var(--dim);
+    margin-bottom: 3px;
+  }
 
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
   button {
@@ -60,6 +85,16 @@
   .deny { background: var(--danger); }
   .allow { background: var(--ok); }
   .verdict { margin-top: 12px; font-size: 14px; color: var(--dim); text-align: center; }
+
+  details { margin-top: 12px; font-size: 12px; color: var(--dim); }
+  details summary { cursor: pointer; list-style: none; opacity: .85; padding: 4px 0; }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before { content: "▸ "; }
+  details[open] summary::before { content: "▾ "; }
+  .detail-row {
+    margin-top: 4px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 11px; line-height: 1.6; word-break: break-all; color: #74818d;
+  }
 
   h2 { font-size: 13px; color: var(--dim); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; margin: 26px 0 10px; }
 
@@ -74,8 +109,11 @@
   .mark.running { color: #5aa9c9; animation: pulse 1.2s infinite; }
   .mark.done { color: #63b381; }
   .mark.failed { color: #d0564c; }
-  .title { flex: 1; word-break: break-word; }
+  .title { flex: 1; word-break: break-word; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 14px; }
   .title.done { color: var(--dim); }
+  .title.trunc, .title.expanded { cursor: pointer; }
+  .title.trunc::after { content: "展开"; font-family: inherit; font-size: 11px; color: var(--accent); margin-left: 8px; }
+  .title.expanded::after { content: "收起"; font-family: inherit; font-size: 11px; color: var(--accent); margin-left: 8px; }
   @keyframes pulse { 50% { opacity: .35; } }
 
   .empty { color: var(--dim); font-size: 14px; }
@@ -89,6 +127,11 @@
 </header>
 
 <main>
+  <div class="task" id="task" hidden>
+    <span class="label">你交代的任务</span>
+    <span id="task-text"></span>
+  </div>
+
   <div id="approvals"></div>
 
   <h2>进度</h2>
@@ -109,6 +152,9 @@
   const approvalsEl = document.getElementById("approvals");
 
   const MARK = { pending: "○", running: "●", done: "✓", failed: "✗" };
+  const KIND = { execute: "执行", edit: "编辑", read: "读取", fetch: "联网", search: "检索", delete: "删除" };
+  const STEP_MAX = 44;
+
   const stepEls = new Map();
   let ws = null;
   let retry = 800;
@@ -130,7 +176,13 @@
     ws.onerror = () => {};
     ws.onmessage = (e) => {
       let msg; try { msg = JSON.parse(e.data); } catch { return; }
-      if (msg.type === "hello") { projectEl.textContent = msg.project || ""; }
+      if (msg.type === "hello") {
+        projectEl.textContent = msg.project || "";
+        if (msg.task) {
+          document.getElementById("task-text").textContent = msg.task;
+          document.getElementById("task").hidden = false;
+        }
+      }
       if (msg.type === "event") onEvent(msg.event);
       if (msg.type === "ack") onAck(msg);
     };
@@ -142,6 +194,8 @@
     if (ev.type === "approval_request") renderApproval(ev);
   }
 
+  /** 清单里允许截断：长命令只露前半段，点一下展开。
+   *  这不是为了省地方，是为了让一眼扫得过去——但必须留一个"还有"的标记。 */
   function upsertStep(step) {
     let el = stepEls.get(step.id);
     if (!el) {
@@ -153,44 +207,93 @@
     }
     const mark = el.querySelector(".mark");
     const title = el.querySelector(".title");
+    // 非执行类动作，标题往往只是个路径（"…\all.md"）。前面补一个动词标签，
+    // 否则清单里看不出这是"写入"还是"删除"。
+    const prefix = step.kind && step.kind !== "execute" ? (KIND[step.kind] || step.kind) + " · " : "";
+    const full = prefix + (step.title || "");
+
     mark.className = "mark " + step.status;
     mark.textContent = MARK[step.status] || "○";
-    title.textContent = step.title;
-    title.className = "title " + (step.status === "done" ? "done" : "");
+    title.className = "title" + (step.status === "done" ? " done" : "");
+
+    const needsTrunc = full.length > STEP_MAX;
+    title.dataset.full = full;
+    if (needsTrunc) {
+      title.textContent = full.slice(0, STEP_MAX).trimEnd() + "…";
+      title.classList.add("trunc");
+      title.onclick = () => {
+        const expanded = title.classList.contains("expanded");
+        title.classList.toggle("expanded", !expanded);
+        title.classList.toggle("trunc", expanded);
+        title.textContent = expanded ? full.slice(0, STEP_MAX).trimEnd() + "…" : full;
+      };
+    } else {
+      title.textContent = full;
+      title.onclick = null;
+    }
   }
 
+  /** 审批卡片：动作永远完整显示（这里绝不截断），
+   *  技术字段（字节数、摘要）收进"详情"，不占主位。 */
   function renderApproval(ev) {
     const card = document.createElement("div");
     card.className = "card alert";
     card.dataset.id = ev.request_id;
 
+    const kicker = document.createElement("div");
+    kicker.className = "kicker";
+    kicker.textContent = "需要你批准";
+
+    const action = document.createElement("div");
+    action.className = "action";
+    action.textContent = ev.action_display || "(无动作)";
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    const facts = ev.facts || {};
+    const addTag = (label, value) => {
+      if (value === undefined || value === null || value === "" || value === "-") return;
+      const span = document.createElement("span");
+      span.className = "tag";
+      span.append(label + " ");
+      const b = document.createElement("b");
+      b.textContent = String(value);
+      span.append(b);
+      meta.append(span);
+    };
+    addTag("类型", KIND[facts.kind] || facts.kind);
+    addTag("位置", facts.locations);
+    addTag("文件", facts.files);
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    actions.innerHTML = `<button class="deny">拒绝</button><button class="allow">批准</button>`;
+
+    const verdict = document.createElement("div");
+    verdict.className = "verdict";
+
+    // 技术字段：默认折叠
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    summary.textContent = "详情（校验信息）";
+    const row = document.createElement("div");
+    row.className = "detail-row";
+    row.textContent = `原文 ${ev.raw_ref ? ev.raw_ref.length : 0} 字节 · 摘要 ${(ev.raw_digest || "").slice(0, 16)}…`;
+    details.append(summary, row);
+
+    card.append(kicker, action, meta, actions, verdict, details);
+
     const left = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));
-    card.innerHTML = `
-      <div class="kicker">需要你批准</div>
-      <div class="action"></div>
-      <div class="meta">
-        <span>类型 <b class="kind"></b></span>
-        <span>位置 <b class="loc"></b></span>
-        <span>原文 <b>${ev.raw_ref ? ev.raw_ref.length : 0}</b> 字节</span>
-        <span>摘要 <b>${(ev.raw_digest || "").slice(0, 8)}…</b></span>
-      </div>
-      <div class="actions">
-        <button class="deny">拒绝</button>
-        <button class="allow">批准</button>
-      </div>
-      <div class="verdict">${left} 秒内不处理将自动失效</div>`;
+    verdict.textContent = `${left} 秒内不处理将自动失效`;
 
-    card.querySelector(".action").textContent = ev.action_display || "(无动作)";
-    card.querySelector(".kind").textContent = (ev.facts && ev.facts.kind) || "-";
-    card.querySelector(".loc").textContent = (ev.facts && ev.facts.locations) || "-";
-
-    const [deny, allow] = card.querySelectorAll("button");
-    const verdict = card.querySelector(".verdict");
+    const [deny, allow] = actions.querySelectorAll("button");
 
     const decide = (d) => {
       deny.disabled = true; allow.disabled = true;
       verdict.textContent = d === "allow" ? "已批准，等待 Agent 确认…" : "已拒绝，等待 Agent 确认…";
-      ws && ws.readyState === 1 && ws.send(JSON.stringify({ type: "decision", requestId: ev.request_id, decision: d }));
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "decision", requestId: ev.request_id, decision: d }));
+      }
       if (navigator.vibrate) navigator.vibrate(30);
     };
     deny.onclick = () => decide("reject");
@@ -204,6 +307,11 @@
           deny.disabled = allow.disabled = true;
           verdict.textContent = "已超时，本次批准作废";
           card.classList.remove("alert");
+          setTimeout(() => {
+            card.style.transition = "opacity .5s";
+            card.style.opacity = "0";
+            setTimeout(() => card.remove(), 520);
+          }, 6000);
         }
       } else if (!deny.disabled) {
         verdict.textContent = `${s} 秒内不处理将自动失效`;
@@ -211,6 +319,8 @@
     }, 1000);
 
     approvalsEl.prepend(card);
+    // 新请求一定在最上面：万一用户滚到下面看进度了，拉回来
+    window.scrollTo({ top: 0, behavior: "smooth" });
     if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
   }
 
@@ -224,6 +334,14 @@
     } else {
       verdict.textContent = "这条请求已失效";
     }
+    // 处理完的卡片留 8 秒给人看清结果，然后淡出。
+    // 不清理的话，干几件事屏幕上就全是历史卡片，新的那张反被挤下去。
+    setTimeout(() => {
+      card.style.transition = "opacity .5s, transform .5s";
+      card.style.opacity = "0";
+      card.style.transform = "translateY(-8px)";
+      setTimeout(() => card.remove(), 520);
+    }, 8000);
   }
 
   connect();

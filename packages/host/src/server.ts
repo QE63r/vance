@@ -30,6 +30,13 @@ export interface HostOptions {
   hostname?: string;
   /** 项目名，展示用 */
   projectName?: string;
+  /**
+   * 用户交代给 Agent 的原话。
+   *
+   * 为什么放在 Host 而不是事件里：它不是 Agent 产生的事实，是"人说的话"。
+   * 但它是判断"这一步该不该做"最重要的上下文——所以要原样送到手机上。
+   */
+  task?: string;
 }
 
 export interface DecisionRecord {
@@ -115,7 +122,11 @@ export class HostServer {
       }
       this.clients.add(socket);
       socket.send(
-        JSON.stringify({ type: "hello", project: this.options.projectName ?? "vance" }),
+        JSON.stringify({
+          type: "hello",
+          project: this.options.projectName ?? "vance",
+          task: this.options.task ?? "",
+        }),
       );
       // 补发还没被处理掉的审批：手机晚连上也能看到
       for (const pending of this.pendingApprovals.values()) {
