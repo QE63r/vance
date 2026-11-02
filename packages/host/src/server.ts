@@ -157,9 +157,11 @@ export class HostServer {
     wss.on("connection", (socket, req) => {
       const token = new URL(req.url ?? "/", "http://x").searchParams.get("token") ?? "";
       if (!this.tokens.has(token)) {
+        console.log(`[host] 拒绝连接：口令不对（收到 "${token.slice(0, 12)}"）`);
         socket.close(4001, "bad token");
         return;
       }
+      console.log(`[host] 设备已连接（当前 ${this.clients.size + 1} 台）`);
       this.clients.add(socket);
       socket.send(
         JSON.stringify({
