@@ -107,6 +107,13 @@ export class AcpClient {
     });
   }
 
+  /** 让 Agent 停下来（ACP 的 session/cancel） */
+  cancel(): void {
+    if (!this.sessionId) return;
+    this.send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId: this.sessionId } });
+    this.log("[acp] 已发送取消");
+  }
+
   stop(): void {
     this.child?.kill();
     this.child = null;

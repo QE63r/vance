@@ -51,6 +51,8 @@ export class HostServer {
   private wss: WebSocketServer | null = null;
   private readonly clients = new Set<WebSocket>();
   private handler: DecisionHandler | null = null;
+  private promptHandler: ((text: string) => void) | null = null;
+  private stopHandler: (() => void) | null = null;
   private readonly tokens: Set<string>;
   /**
    * 尚未被处理掉的审批请求。
@@ -68,6 +70,24 @@ export class HostServer {
   /** 谁来决定；返回 false 表示"这条请求已经失效或不存在" */
   onDecision(handler: DecisionHandler): void {
     this.handler = handler;
+  }
+
+  /** 手机发来一句新指令（让它接着干下一件事） */
+  onPrompt(handler: (text: string) => void): void {
+    this.promptHandler = handler;
+  }
+
+  /** 手机要求停下来 */
+  onStop(handler: () => void): void {
+    this.stopHandler = handler;
+  }
+
+  /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
+  broadcastTurn(state: "running" | "idle" | "stopped"): void {
+    const payload = JSON.stringify({ type: "turn", state });
+    for (const client of this.clients) {
+      if (client.readyState === client.OPEN) client.send(payload);
+    }
   }
 
   /** 把一条事件推给所有已连接的手机 */
@@ -138,6 +158,14 @@ export class HostServer {
         try {
           msg = JSON.parse(String(raw));
         } catch {
+          return;
+        }
+        if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
+          this.promptHandler?.(msg.text.trim());
+          return;
+        }
+        if (msg?.type === "stop") {
+          this.stopHandler?.();
           return;
         }
         if (msg?.type !== "decision" || typeof msg.requestId !== "string") return;
