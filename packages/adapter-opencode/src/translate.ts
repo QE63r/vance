@@ -92,6 +92,23 @@ function asString(v: unknown, fallback: string): string {
 }
 
 /**
+ * 从命令里提取"涉及哪些文件"。
+ *
+ * 只认被引号括起来的路径——这是命令里唯一能确定的东西。
+ * 不做语义分析：拿不到就是空，绝不猜。
+ */
+export function extractPaths(text: string): string {
+  const found = new Set<string>();
+  const re = /"([^"]{1,200})"|'([^']{1,200})'/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const value = m[1] ?? m[2];
+    if (value && !value.startsWith("-")) found.add(value);
+  }
+  return [...found].slice(0, 4).join(", ");
+}
+
+/**
  * 翻译一行 ACP 消息。
  *
  * @param rawLine 原样收到的那一行（含或不含换行都行，换行会在计算前去掉）
@@ -119,14 +136,18 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
           .join(", ")
       : "";
 
+    const title = asString(toolCall.title, toolCallId);
+
     const candidate = {
       ...envelope(line, toolCallId, opts),
       type: "approval_request" as const,
-      action_display: asString(toolCall.title, toolCallId),
+      action_display: title,
       facts: {
         kind: asString(toolCall.kind, "unknown"),
         status: asString(toolCall.status, "pending"),
         locations,
+        // 命令里能确定的文件（引号内的路径）。拿不到就是空，不猜。
+        files: asString(toolCall.kind, "") === "edit" ? title : extractPaths(title),
       },
     };
 

@@ -22,6 +22,7 @@ const host = new HostServer({
   token,
   pagePath: PAGE,
   projectName: "sandbox",
+  task: PROMPT,
 });
 
 host.onDecision(({ requestId, decision }) => {
@@ -78,6 +79,21 @@ const sessionId = await client.start();
 console.log("  session: " + sessionId);
 console.log("  指令: " + PROMPT);
 console.log("");
+
+// 等手机连上再开始，避免"审批已经发出、人还没打开页面"
+if (host.deviceCount === 0) {
+  console.log("  等待手机连接后再开始…");
+  await new Promise((resolve) => {
+    const timer = setInterval(() => {
+      if (host.deviceCount > 0) {
+        clearInterval(timer);
+        resolve();
+      }
+    }, 300);
+  });
+  console.log("  手机已连接，开始执行");
+  console.log("");
+}
 
 const reason = await client.runTurn(PROMPT);
 console.log("  本轮结束: " + reason);
