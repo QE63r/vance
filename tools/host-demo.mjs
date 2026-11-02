@@ -95,7 +95,36 @@ if (host.deviceCount === 0) {
   console.log("");
 }
 
+// 手机上发来的指令 → 交给 Agent 接着干
+host.onPrompt(async (text) => {
+  if (running) return;
+  running = true;
+  host.broadcastTurn("running");
+  console.log("\n  ▶ 手机指令：" + text);
+  try {
+    const r = await client.runTurn(text);
+    console.log("  本轮结束：" + r);
+  } catch (err) {
+    console.log("  出错：" + String(err));
+  } finally {
+    running = false;
+    host.broadcastTurn("idle");
+  }
+});
+
+host.onStop(() => {
+  console.log("  ⏹ 手机要求停止");
+  client.cancel();
+  host.broadcastTurn("stopped");
+});
+
+let running = false;
+
+running = true;
+host.broadcastTurn("running");
 const reason = await client.runTurn(PROMPT);
+running = false;
+host.broadcastTurn("idle");
 console.log("  本轮结束: " + reason);
 console.log(`  连接中的设备: ${host.deviceCount}`);
 console.log("");

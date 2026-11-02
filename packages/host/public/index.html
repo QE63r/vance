@@ -118,6 +118,34 @@
 
   .empty { color: var(--dim); font-size: 14px; }
   footer { text-align: center; color: #55636f; font-size: 12px; margin-top: 28px; }
+
+  /* 底部指令栏：这是"控制页"和"审批页"的分界线 */
+  .composer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+    background: linear-gradient(to top, var(--bg) 72%, rgba(15,20,25,0));
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+  }
+  .composer .row {
+    display: flex; gap: 8px; align-items: flex-end;
+    max-width: 640px; margin: 0 auto;
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 8px;
+  }
+  .composer textarea {
+    flex: 1; resize: none; border: 0; outline: none; background: transparent;
+    color: var(--text); font: inherit; font-size: 15px; line-height: 1.4;
+    max-height: 120px; padding: 8px 6px;
+  }
+  .composer textarea::placeholder { color: #5d6a77; }
+  .composer button {
+    flex: 0 0 auto; padding: 10px 16px; border-radius: 10px; font-size: 14px;
+  }
+  .send { background: var(--accent); }
+  .stop { background: var(--danger); }
+  .composer .hint {
+    max-width: 640px; margin: 6px auto 0; font-size: 11px; color: #55636f; text-align: center;
+  }
+  main { padding-bottom: 120px; }
 </style>
 </head>
 <body>
@@ -140,6 +168,15 @@
 
   <footer>局域网直连 · 数据不出这台电脑</footer>
 </main>
+
+<div class="composer">
+  <div class="row">
+    <textarea id="input" rows="1" placeholder="让它做下一件事…"></textarea>
+    <button class="send" id="send">发送</button>
+    <button class="stop" id="stop" hidden>停止</button>
+  </div>
+  <div class="hint" id="hint">空闲</div>
+</div>
 
 <script>
 (() => {
@@ -185,6 +222,7 @@
       }
       if (msg.type === "event") onEvent(msg.event);
       if (msg.type === "ack") onAck(msg);
+      if (msg.type === "turn") setRunning(msg.state === "running", msg.state);
     };
   }
 
@@ -343,6 +381,50 @@
       setTimeout(() => card.remove(), 520);
     }, 8000);
   }
+
+  // ── 底部指令栏 ──
+  const inputEl = document.getElementById("input");
+  const sendBtn = document.getElementById("send");
+  const stopBtn = document.getElementById("stop");
+  const hintEl = document.getElementById("hint");
+  let running = false;
+
+  function setRunning(on, state) {
+    running = on;
+    sendBtn.hidden = on;
+    stopBtn.hidden = !on;
+    hintEl.textContent = on
+      ? "正在执行…"
+      : state === "stopped"
+        ? "已停止"
+        : "空闲，可以交代下一件事";
+  }
+
+  function sendPrompt() {
+    const text = inputEl.value.trim();
+    if (!text || running) return;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: "prompt", text }));
+      inputEl.value = "";
+      inputEl.style.height = "auto";
+    }
+  }
+
+  sendBtn.onclick = sendPrompt;
+  stopBtn.onclick = () => {
+    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "stop" }));
+  };
+  inputEl.addEventListener("input", () => {
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+  });
+  inputEl.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendPrompt();
+    }
+  });
+  setRunning(false, "idle");
 
   connect();
 })();
