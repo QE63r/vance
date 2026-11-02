@@ -462,11 +462,11 @@
         }
         case "turn":
           setRunning(msg.state === "running", msg.state);
-          if (msg.state === "idle") {
-            const d = add("divider", "本轮结束");
-            d.classList.add("divider");
+          if (msg.state !== "running") {
+            // 这一轮结束了，用服务端的权威历史重建一次：
+            // 流式渲染可能漏字（比如这次只显示了"已创建：`"），对账能修回来
+            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "resync" }));
           }
-          toBottom(true);
           break;
       }
     };
