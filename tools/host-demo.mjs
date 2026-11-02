@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer } from "../packages/host/dist/index.js";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
+import { classifyApproval } from "../packages/policy/dist/index.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
@@ -55,6 +56,13 @@ const client = new AcpClient(
       console.log(`  ${mark} ${event.step?.title}`);
     },
     onApproval: (event, reply) => {
+      // 安静的来源：只读动作不打扰人，直接放行
+      const verdict = classifyApproval(event);
+      if (verdict.auto) {
+        console.log(`  · 静默放行（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
+        reply("allow");
+        return;
+      }
       pending.set(event.request_id, reply);
       host.broadcast(event);
       console.log("");
