@@ -49,6 +49,7 @@ console.log("");
 const client = new AcpClient(
   { cwd: CWD, projectId: "sandbox" },
   {
+    onChat: (messageId, text) => host.broadcastChat(messageId, text),
     onStep: (event) => {
       host.broadcast(event);
       const s = event.step?.status ?? "pending";

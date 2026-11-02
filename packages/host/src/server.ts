@@ -90,6 +90,14 @@ export class HostServer {
     }
   }
 
+  /** 转发 Agent 说的一句话（流式片段，原样） */
+  broadcastChat(messageId: string, text: string): void {
+    const payload = JSON.stringify({ type: "chat", role: "agent", messageId, text });
+    for (const client of this.clients) {
+      if (client.readyState === client.OPEN) client.send(payload);
+    }
+  }
+
   /** 把一条事件推给所有已连接的手机 */
   broadcast(event: AgentEvent): void {
     if (event.type === "approval_request") {

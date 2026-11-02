@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <meta name="theme-color" content="#0f1419" />
-<title>梵境 · 审批</title>
+<title>梵境</title>
 <style>
   :root {
     --bg: #0f1419;
@@ -19,133 +19,101 @@
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
-    font: 16px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
-    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+    font: 16px/1.55 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
   }
   header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    padding: 12px 16px; border-bottom: 1px solid var(--line);
     position: sticky; top: 0; background: var(--bg); z-index: 2;
   }
-  .brand { font-weight: 600; letter-spacing: .02em; }
+  .brand { font-weight: 600; }
   .brand small { color: var(--dim); font-weight: 400; margin-left: 6px; }
-  .status { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .status { font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
   .dot.on { background: var(--ok); }
 
-  main { padding: 16px 16px 40px; max-width: 640px; margin: 0 auto; }
+  main { padding: 16px 14px 140px; max-width: 680px; margin: 0 auto; }
+  #feed { display: flex; flex-direction: column; gap: 10px; }
+
+  .msg {
+    max-width: 88%; padding: 10px 13px; border-radius: 14px;
+    font-size: 15px; white-space: pre-wrap; word-break: break-word; line-height: 1.55;
+  }
+  .msg.user { align-self: flex-end; background: var(--accent); border-bottom-right-radius: 5px; }
+  .msg.agent { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 5px; }
+  .msg.agent:empty { display: none; }
+
+  .step {
+    display: flex; gap: 8px; align-items: flex-start;
+    font-size: 13px; color: var(--dim); padding: 2px 2px;
+  }
+  .step .mark { flex: 0 0 16px; text-align: center; }
+  .step .mark.running { color: #5aa9c9; animation: pulse 1.2s infinite; }
+  .step .mark.done { color: #63b381; }
+  .step .mark.failed { color: #d0564c; }
+  .step .title {
+    flex: 1; font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12.5px; word-break: break-word;
+  }
+  .step .title.trunc, .step .title.expanded { cursor: pointer; }
+  .step .title.trunc::after { content: "展开"; font-family: inherit; font-size: 11px; color: var(--accent); margin-left: 6px; }
+  .step .title.expanded::after { content: "收起"; font-family: inherit; font-size: 11px; color: var(--accent); margin-left: 6px; }
 
   .card {
     background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    border-radius: 14px; padding: 14px; align-self: stretch;
   }
   .card.alert { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(184,67,58,.25); }
-
-  .kicker { font-size: 12px; letter-spacing: .08em; color: var(--danger); text-transform: uppercase; }
+  .kicker { font-size: 11px; letter-spacing: .08em; color: var(--danger); text-transform: uppercase; }
   .action {
     font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    font-size: 15px; line-height: 1.5; margin: 10px 0 12px;
-    word-break: break-all; background: #11181f; padding: 12px; border-radius: 10px;
-    border: 1px solid var(--line);
-    white-space: pre-wrap;
+    font-size: 14px; line-height: 1.6; margin: 8px 0 10px;
+    background: #11181f; padding: 10px 12px; border-radius: 9px;
+    border: 1px solid var(--line); word-break: break-all; white-space: pre-wrap;
   }
-  .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--dim); }
-  .meta .tag {
-    display: inline-flex; align-items: baseline; gap: 6px;
-    background: #141c24; border: 1px solid var(--line);
-    padding: 4px 9px; border-radius: 999px;
-  }
+  .meta { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12.5px; color: var(--dim); }
+  .meta .tag { display: inline-flex; gap: 5px; background: #141c24; border: 1px solid var(--line); padding: 3px 8px; border-radius: 999px; }
   .meta b { color: var(--text); font-weight: 500; }
-
-  /* 你交代的任务，一直挂在顶部：判断"这一步该不该做"，全靠它 */
-  .task {
-    border-left: 3px solid var(--accent);
-    background: #131b23;
-    padding: 10px 14px;
-    border-radius: 0 10px 10px 0;
-    margin-bottom: 16px;
-    font-size: 14px;
-    line-height: 1.55;
-    color: #c3ced8;
-  }
-  .task .label {
-    display: block;
-    font-size: 11px;
-    letter-spacing: .08em;
-    color: var(--dim);
-    margin-bottom: 3px;
-  }
-
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   button {
-    font: inherit; font-weight: 600; border: 0; border-radius: 12px;
-    padding: 16px 10px; color: #fff; cursor: pointer; transition: opacity .15s;
+    font: inherit; font-weight: 600; border: 0; border-radius: 11px;
+    padding: 14px 10px; color: #fff; cursor: pointer; transition: opacity .15s;
   }
   button:disabled { opacity: .45; cursor: default; }
   .deny { background: var(--danger); }
   .allow { background: var(--ok); }
-  .verdict { margin-top: 12px; font-size: 14px; color: var(--dim); text-align: center; }
-
-  details { margin-top: 12px; font-size: 12px; color: var(--dim); }
-  details summary { cursor: pointer; list-style: none; opacity: .85; padding: 4px 0; }
+  .verdict { margin-top: 10px; font-size: 13px; color: var(--dim); text-align: center; }
+  details { margin-top: 10px; font-size: 12px; color: var(--dim); }
+  details summary { cursor: pointer; list-style: none; padding: 3px 0; }
   details summary::-webkit-details-marker { display: none; }
   details summary::before { content: "▸ "; }
   details[open] summary::before { content: "▾ "; }
-  .detail-row {
-    margin-top: 4px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
-    font-size: 11px; line-height: 1.6; word-break: break-all; color: #74818d;
-  }
+  .detail-row { margin-top: 4px; font-family: ui-monospace, monospace; font-size: 11px; word-break: break-all; color: #74818d; }
 
-  h2 { font-size: 13px; color: var(--dim); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; margin: 26px 0 10px; }
+  .divider { display: flex; align-items: center; gap: 10px; color: #4c5a67; font-size: 11px; margin: 6px 0; }
+  .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 
-  ul.steps { list-style: none; margin: 0; padding: 0; }
-  ul.steps li {
-    display: flex; gap: 10px; align-items: flex-start;
-    padding: 10px 2px; border-bottom: 1px solid #202a35; font-size: 15px;
-  }
-  ul.steps li:last-child { border-bottom: 0; }
-  .mark { width: 18px; flex: 0 0 18px; text-align: center; line-height: 1.5; }
-  .mark.pending { color: #4a5867; }
-  .mark.running { color: #5aa9c9; animation: pulse 1.2s infinite; }
-  .mark.done { color: #63b381; }
-  .mark.failed { color: #d0564c; }
-  .title { flex: 1; word-break: break-word; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 14px; }
-  .title.done { color: var(--dim); }
-  .title.trunc, .title.expanded { cursor: pointer; }
-  .title.trunc::after { content: "展开"; font-family: inherit; font-size: 11px; color: var(--accent); margin-left: 8px; }
-  .title.expanded::after { content: "收起"; font-family: inherit; font-size: 11px; color: var(--accent); margin-left: 8px; }
-  @keyframes pulse { 50% { opacity: .35; } }
-
-  .empty { color: var(--dim); font-size: 14px; }
-  footer { text-align: center; color: #55636f; font-size: 12px; margin-top: 28px; }
-
-  /* 底部指令栏：这是"控制页"和"审批页"的分界线 */
   .composer {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
-    background: linear-gradient(to top, var(--bg) 72%, rgba(15,20,25,0));
-    padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+    background: linear-gradient(to top, var(--bg) 74%, rgba(15,20,25,0));
+    padding: 10px 14px calc(12px + env(safe-area-inset-bottom));
   }
   .composer .row {
-    display: flex; gap: 8px; align-items: flex-end;
-    max-width: 640px; margin: 0 auto;
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 14px; padding: 8px;
+    display: flex; gap: 8px; align-items: flex-end; max-width: 680px; margin: 0 auto;
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 7px;
   }
   .composer textarea {
     flex: 1; resize: none; border: 0; outline: none; background: transparent;
     color: var(--text); font: inherit; font-size: 15px; line-height: 1.4;
-    max-height: 120px; padding: 8px 6px;
+    max-height: 110px; padding: 8px 6px;
   }
   .composer textarea::placeholder { color: #5d6a77; }
-  .composer button {
-    flex: 0 0 auto; padding: 10px 16px; border-radius: 10px; font-size: 14px;
-  }
+  .composer button { flex: 0 0 auto; padding: 10px 15px; border-radius: 10px; font-size: 14px; }
   .send { background: var(--accent); }
   .stop { background: var(--danger); }
-  .composer .hint {
-    max-width: 640px; margin: 6px auto 0; font-size: 11px; color: #55636f; text-align: center;
-  }
-  main { padding-bottom: 120px; }
+  .hint { max-width: 680px; margin: 6px auto 0; font-size: 11px; color: #55636f; text-align: center; }
+
+  @keyframes pulse { 50% { opacity: .35; } }
 </style>
 </head>
 <body>
@@ -155,23 +123,12 @@
 </header>
 
 <main>
-  <div class="task" id="task" hidden>
-    <span class="label">你交代的任务</span>
-    <span id="task-text"></span>
-  </div>
-
-  <div id="approvals"></div>
-
-  <h2>进度</h2>
-  <ul class="steps" id="steps"></ul>
-  <div class="empty" id="empty">还没有步骤。让它干点活。</div>
-
-  <footer>局域网直连 · 数据不出这台电脑</footer>
+  <div id="feed"></div>
 </main>
 
 <div class="composer">
   <div class="row">
-    <textarea id="input" rows="1" placeholder="让它做下一件事…"></textarea>
+    <textarea id="input" rows="1" placeholder="在这里跟你电脑上的 Agent 说话…"></textarea>
     <button class="send" id="send">发送</button>
     <button class="stop" id="stop" hidden>停止</button>
   </div>
@@ -181,101 +138,88 @@
 <script>
 (() => {
   const token = new URLSearchParams(location.search).get("token") || "";
+  const feed = document.getElementById("feed");
   const projectEl = document.getElementById("project");
   const connEl = document.getElementById("conn");
   const dotEl = document.getElementById("dot");
-  const stepsEl = document.getElementById("steps");
-  const emptyEl = document.getElementById("empty");
-  const approvalsEl = document.getElementById("approvals");
 
   const MARK = { pending: "○", running: "●", done: "✓", failed: "✗" };
-  const KIND = { execute: "执行", edit: "编辑", read: "读取", fetch: "联网", search: "检索", delete: "删除" };
-  const STEP_MAX = 44;
+  const KIND = { execute: "执行", edit: "编辑", read: "读取", fetch: "联网", other: "访问" };
+  const STEP_MAX = 52;
 
   const stepEls = new Map();
-  let ws = null;
-  let retry = 800;
+  const bubbles = new Map();
+  let ws = null, retry = 800, running = false, stickBottom = true;
 
-  function setConn(on, text) {
-    dotEl.classList.toggle("on", on);
-    connEl.textContent = text;
+  /* ── 滚动：贴底时自动跟随，用户翻上去就不打扰 ── */
+  window.addEventListener("scroll", () => {
+    stickBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140;
+  }, { passive: true });
+
+  function toBottom(force) {
+    if (!force && !stickBottom) return;
+    requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight }));
   }
 
-  function connect() {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
-
-    ws.onopen = () => { retry = 800; setConn(true, "已连接"); };
-    ws.onclose = () => {
-      setConn(false, "已断开，重连中…");
-      setTimeout(connect, retry = Math.min(retry * 1.6, 8000));
-    };
-    ws.onerror = () => {};
-    ws.onmessage = (e) => {
-      let msg; try { msg = JSON.parse(e.data); } catch { return; }
-      if (msg.type === "hello") {
-        projectEl.textContent = msg.project || "";
-        if (msg.task) {
-          document.getElementById("task-text").textContent = msg.task;
-          document.getElementById("task").hidden = false;
-        }
-      }
-      if (msg.type === "event") onEvent(msg.event);
-      if (msg.type === "ack") onAck(msg);
-      if (msg.type === "turn") setRunning(msg.state === "running", msg.state);
-    };
+  function add(cls, text) {
+    const el = document.createElement("div");
+    el.className = cls;
+    if (text !== undefined) el.textContent = text;
+    feed.appendChild(el);
+    toBottom();
+    return el;
   }
 
-  function onEvent(ev) {
-    if (!ev || !ev.type) return;
-    if (ev.type === "status_update" && ev.step) upsertStep(ev.step);
-    if (ev.type === "approval_request") renderApproval(ev);
+  /* ── 三条渲染路径：我说的话、它说的话、它做的步骤 ── */
+
+  function showUser(text) {
+    add("msg user", text);
+    toBottom(true);
   }
 
-  /** 清单里允许截断：长命令只露前半段，点一下展开。
-   *  这不是为了省地方，是为了让一眼扫得过去——但必须留一个"还有"的标记。 */
-  function upsertStep(step) {
-    let el = stepEls.get(step.id);
-    if (!el) {
-      el = document.createElement("li");
-      el.innerHTML = `<span class="mark"></span><span class="title"></span>`;
-      stepsEl.appendChild(el);
-      stepEls.set(step.id, el);
-      emptyEl.style.display = "none";
+  function showAgent(msgId, chunk) {
+    let b = bubbles.get(msgId);
+    if (!b) { b = add("msg agent"); bubbles.set(msgId, b); }
+    b.textContent += chunk;
+    toBottom();
+  }
+
+  function showStep(step) {
+    let row = stepEls.get(step.id);
+    if (!row) {
+      row = document.createElement("div");
+      row.className = "step";
+      row.innerHTML = `<span class="mark"></span><span class="title"></span>`;
+      feed.appendChild(row);
+      stepEls.set(step.id, row);
     }
-    const mark = el.querySelector(".mark");
-    const title = el.querySelector(".title");
-    // 非执行类动作，标题往往只是个路径（"…\all.md"）。前面补一个动词标签，
-    // 否则清单里看不出这是"写入"还是"删除"。
     const prefix = step.kind && step.kind !== "execute" ? (KIND[step.kind] || step.kind) + " · " : "";
     const full = prefix + (step.title || "");
 
-    mark.className = "mark " + step.status;
-    mark.textContent = MARK[step.status] || "○";
-    title.className = "title" + (step.status === "done" ? " done" : "");
+    row.querySelector(".mark").className = "mark " + step.status;
+    row.querySelector(".mark").textContent = MARK[step.status] || "○";
 
-    const needsTrunc = full.length > STEP_MAX;
-    title.dataset.full = full;
-    if (needsTrunc) {
+    const title = row.querySelector(".title");
+    title.className = "title";
+    if (full.length > STEP_MAX) {
       title.textContent = full.slice(0, STEP_MAX).trimEnd() + "…";
       title.classList.add("trunc");
       title.onclick = () => {
-        const expanded = title.classList.contains("expanded");
-        title.classList.toggle("expanded", !expanded);
-        title.classList.toggle("trunc", expanded);
-        title.textContent = expanded ? full.slice(0, STEP_MAX).trimEnd() + "…" : full;
+        const ex = title.classList.contains("expanded");
+        title.classList.toggle("expanded", !ex);
+        title.classList.toggle("trunc", ex);
+        title.textContent = ex ? full.slice(0, STEP_MAX).trimEnd() + "…" : full;
       };
     } else {
       title.textContent = full;
-      title.onclick = null;
     }
+    toBottom();
   }
 
-  /** 审批卡片：动作永远完整显示（这里绝不截断），
-   *  技术字段（字节数、摘要）收进"详情"，不占主位。 */
-  function renderApproval(ev) {
-    // 同一条请求可能被补发多次（重连、多设备），只渲染一张卡
-    if (approvalsEl.querySelector(`.card[data-id="${CSS.escape(ev.request_id)}"]`)) return;
+  /* ── 审批卡片：作为对话里的一条，插在最下面 ── */
+
+  function showApproval(ev) {
+    if (feed.querySelector(`.card[data-id="${CSS.escape(ev.request_id)}"]`)) return;
 
     const card = document.createElement("div");
     card.className = "card alert";
@@ -292,19 +236,19 @@
     const meta = document.createElement("div");
     meta.className = "meta";
     const facts = ev.facts || {};
-    const addTag = (label, value) => {
+    const tag = (label, value) => {
       if (value === undefined || value === null || value === "" || value === "-") return;
-      const span = document.createElement("span");
-      span.className = "tag";
-      span.append(label + " ");
+      const s = document.createElement("span");
+      s.className = "tag";
+      s.append(label + " ");
       const b = document.createElement("b");
       b.textContent = String(value);
-      span.append(b);
-      meta.append(span);
+      s.append(b);
+      meta.append(s);
     };
-    addTag("类型", KIND[facts.kind] || facts.kind);
-    addTag("位置", facts.locations);
-    addTag("文件", facts.files);
+    tag("类型", KIND[facts.kind] || facts.kind);
+    tag("位置", facts.locations);
+    tag("文件", facts.files);
 
     const actions = document.createElement("div");
     actions.className = "actions";
@@ -313,24 +257,23 @@
     const verdict = document.createElement("div");
     verdict.className = "verdict";
 
-    // 技术字段：默认折叠
     const details = document.createElement("details");
     const summary = document.createElement("summary");
     summary.textContent = "详情（校验信息）";
-    const row = document.createElement("div");
-    row.className = "detail-row";
-    row.textContent = `原文 ${ev.raw_ref ? ev.raw_ref.length : 0} 字节 · 摘要 ${(ev.raw_digest || "").slice(0, 16)}…`;
-    details.append(summary, row);
+    const rowEl = document.createElement("div");
+    rowEl.className = "detail-row";
+    rowEl.textContent = `原文 ${ev.raw_ref ? ev.raw_ref.length : 0} 字节 · 摘要 ${(ev.raw_digest || "").slice(0, 16)}…`;
+    details.append(summary, rowEl);
 
     card.append(kicker, action, meta, actions, verdict, details);
+    feed.appendChild(card);
 
     const left = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));
     verdict.textContent = `${left} 秒内不处理将自动失效`;
 
     const [deny, allow] = actions.querySelectorAll("button");
-
     const decide = (d) => {
-      deny.disabled = true; allow.disabled = true;
+      deny.disabled = allow.disabled = true;
       verdict.textContent = d === "allow" ? "已批准，等待 Agent 确认…" : "已拒绝，等待 Agent 确认…";
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: "decision", requestId: ev.request_id, decision: d }));
@@ -348,25 +291,27 @@
           deny.disabled = allow.disabled = true;
           verdict.textContent = "已超时，本次批准作废";
           card.classList.remove("alert");
-          setTimeout(() => {
-            card.style.transition = "opacity .5s";
-            card.style.opacity = "0";
-            setTimeout(() => card.remove(), 520);
-          }, 6000);
+          setTimeout(() => fade(card, 5000), 100);
         }
       } else if (!deny.disabled) {
         verdict.textContent = `${s} 秒内不处理将自动失效`;
       }
     }, 1000);
 
-    approvalsEl.prepend(card);
-    // 新请求一定在最上面：万一用户滚到下面看进度了，拉回来
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    toBottom(true);
     if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
   }
 
+  function fade(el, delay) {
+    setTimeout(() => {
+      el.style.transition = "opacity .5s";
+      el.style.opacity = "0";
+      setTimeout(() => el.remove(), 520);
+    }, delay);
+  }
+
   function onAck(msg) {
-    const card = approvalsEl.querySelector(`.card[data-id="${CSS.escape(msg.requestId)}"]`);
+    const card = feed.querySelector(`.card[data-id="${CSS.escape(msg.requestId)}"]`);
     if (!card) return;
     const verdict = card.querySelector(".verdict");
     if (msg.accepted) {
@@ -375,32 +320,61 @@
     } else {
       verdict.textContent = "这条请求已失效";
     }
-    // 处理完的卡片留 8 秒给人看清结果，然后淡出。
-    // 不清理的话，干几件事屏幕上就全是历史卡片，新的那张反被挤下去。
-    setTimeout(() => {
-      card.style.transition = "opacity .5s, transform .5s";
-      card.style.opacity = "0";
-      card.style.transform = "translateY(-8px)";
-      setTimeout(() => card.remove(), 520);
-    }, 8000);
+    fade(card, 7000);
   }
 
-  // ── 底部指令栏 ──
+  /* ── 连接 ── */
+  function setConn(on, text) {
+    dotEl.classList.toggle("on", on);
+    connEl.textContent = text;
+  }
+
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+
+    ws.onopen = () => { retry = 800; setConn(true, "已连接"); };
+    ws.onclose = () => {
+      setConn(false, "已断开，重连中…");
+      setTimeout(connect, retry = Math.min(retry * 1.6, 8000));
+    };
+    ws.onerror = () => {};
+    ws.onmessage = (e) => {
+      let msg; try { msg = JSON.parse(e.data); } catch { return; }
+      switch (msg.type) {
+        case "hello":
+          projectEl.textContent = msg.project || "";
+          if (msg.task) showUser(msg.task);
+          break;
+        case "chat": showAgent(msg.messageId || "msg", msg.text || ""); break;
+        case "event":
+          if (msg.event?.type === "status_update" && msg.event.step) showStep(msg.event.step);
+          if (msg.event?.type === "approval_request") showApproval(msg.event);
+          break;
+        case "ack": onAck(msg); break;
+        case "turn":
+          setRunning(msg.state === "running", msg.state);
+          if (msg.state === "idle") {
+            const d = add("divider", "本轮结束");
+            d.classList.add("divider");
+          }
+          toBottom(true);
+          break;
+      }
+    };
+  }
+
+  /* ── 底部输入 ── */
   const inputEl = document.getElementById("input");
   const sendBtn = document.getElementById("send");
   const stopBtn = document.getElementById("stop");
   const hintEl = document.getElementById("hint");
-  let running = false;
 
   function setRunning(on, state) {
     running = on;
     sendBtn.hidden = on;
     stopBtn.hidden = !on;
-    hintEl.textContent = on
-      ? "正在执行…"
-      : state === "stopped"
-        ? "已停止"
-        : "空闲，可以交代下一件事";
+    hintEl.textContent = on ? "正在执行…" : state === "stopped" ? "已停止" : "空闲，可以继续说";
   }
 
   function sendPrompt() {
@@ -408,8 +382,11 @@
     if (!text || running) return;
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: "prompt", text }));
+      showUser(text);
       inputEl.value = "";
       inputEl.style.height = "auto";
+      setRunning(true, "running");
+      stickBottom = true;
     }
   }
 
@@ -419,16 +396,13 @@
   };
   inputEl.addEventListener("input", () => {
     inputEl.style.height = "auto";
-    inputEl.style.height = Math.min(inputEl.scrollHeight, 120) + "px";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 110) + "px";
   });
   inputEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendPrompt();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
   });
-  setRunning(false, "idle");
 
+  setRunning(false, "idle");
   connect();
 })();
 </script>
