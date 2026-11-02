@@ -168,7 +168,7 @@
 
   const stepEls = new Map();
   const bubbles = new Map();
-  let ws = null, retry = 800, running = false, stickBottom = true;
+  let ws = null, retry = 800, running = false, stickBottom = true, sawTask = false;
 
   /* ── 滚动：贴底时自动跟随，用户翻上去就不打扰 ── */
   window.addEventListener("scroll", () => {
@@ -377,21 +377,37 @@
   }
 
   function connect() {
-    const proto = location.protocol === "https:" ? "wss" : "ws";
-    ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    if (ws && (ws.readyState === 0 || ws.readyState === 1)) return; // 已经在连/已连上
 
-    ws.onopen = () => { retry = 800; setConn(true, "已连接"); };
-    ws.onclose = () => {
-      setConn(false, "已断开，重连中…");
-      setTimeout(connect, retry = Math.min(retry * 1.6, 8000));
+    const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    ws = socket;
+
+    socket.onopen = () => {
+      if (ws !== socket) return; // 迟到的旧连接，忽略
+      retry = 800;
+      setConn(true, "已连接");
     };
-    ws.onerror = () => {};
-    ws.onmessage = (e) => {
+
+    socket.onclose = () => {
+      if (ws !== socket) return; // 旧连接关闭，不碰新连接的状态
+      ws = null;
+      setConn(false, "已断开，重连中…");
+      setTimeout(connect, (retry = Math.min(retry * 1.6, 8000)));
+    };
+
+    socket.onerror = () => {};
+
+    socket.onmessage = (e) => {
+      if (ws !== socket) return;
       let msg; try { msg = JSON.parse(e.data); } catch { return; }
       switch (msg.type) {
         case "hello":
           projectEl.textContent = msg.project || "";
-          if (msg.task) showUser(msg.task);
+          // 只有第一次才把任务当消息显示，重连不重复
+          if (msg.task && !sawTask) {
+            sawTask = true;
+            showUser(msg.task);
+          }
           break;
         case "chat": showAgent(msg.messageId || "msg", msg.text || ""); break;
         case "event":
@@ -452,6 +468,14 @@
   });
   inputEl.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendPrompt(); }
+  });
+
+  // 手机从后台切回来：立刻重连，不用等退避
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && (!ws || ws.readyState > 1)) {
+      retry = 800;
+      connect();
+    }
   });
 
   setRunning(false, "idle");

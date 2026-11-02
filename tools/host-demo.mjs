@@ -15,7 +15,18 @@ const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
 const CWD = process.argv[2] ?? "C:\\Users\\1\\Desktop\\梵境\\sandbox";
 const PROMPT = process.env.VANCE_PROMPT ?? process.argv[3] ?? "把 data.csv 删掉";
 const PORT = Number(process.env.PORT ?? 8787);
-const token = randomBytes(4).toString("hex");
+// 固定口令：存在 ~/.vance/token，重启后不变，手机存一次书签就能长期用
+const TOKEN_FILE = join(homedir(), ".vance", "token");
+const token = (() => {
+  try {
+    const saved = readFileSync(TOKEN_FILE, "utf8").trim();
+    if (saved) return saved;
+  } catch {}
+  const fresh = randomBytes(4).toString("hex");
+  mkdirSync(dirname(TOKEN_FILE), { recursive: true });
+  writeFileSync(TOKEN_FILE, fresh);
+  return fresh;
+})();
 
 /** 等待人决定的请求：request_id → 回给 Agent 的函数 */
 const pending = new Map();
