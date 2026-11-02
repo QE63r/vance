@@ -194,7 +194,9 @@ export class AcpClient {
       this.handlers.onApproval(translated.event, (decision) => {
         const optionId = pickAcpOption(options, decision);
         if (!optionId) {
-          this.log(`[acp] 没有可用的 ${decision} 选项，保持挂起`);
+          // 拿不到选项时绝不能什么都不做 —— 那会让 Agent 干等到天荒地老
+          this.log(`[acp] 没有可用的 ${decision} 选项，回 cancelled 让 Agent 停下`);
+          this.send({ jsonrpc: "2.0", id: msg.id, result: { outcome: { outcome: "cancelled" } } });
           return;
         }
         this.send({

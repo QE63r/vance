@@ -115,13 +115,12 @@ const client = new AcpClient(
         }
       }, 60_000);
     },
-    onLog: () => {},
+    onLog: (line) => console.log("  [acp] " + String(line).slice(0, 120)),
   },
 );
 
 const sessionId = await client.start();
 console.log("  session: " + sessionId);
-console.log("  指令: " + PROMPT);
 console.log("");
 
 
@@ -132,7 +131,13 @@ host.onPrompt(async (text) => {
   host.broadcastTurn("running");
   console.log("\n  ▶ 手机指令：" + text);
   try {
-    const r = await client.runTurn(text);
+    const watchdog = setTimeout(() => {
+      console.log("  \u26a0 120 秒无进展，判定为卡住");
+      host.broadcastNotice("deny", "这一步超过 120 秒没有进展，已放开输入");
+      host.broadcastTurn("stopped");
+      running = false;
+    }, 120_000);
+    const r = await client.runTurn(text).finally(() => clearTimeout(watchdog));
     console.log("  本轮结束：" + r);
   } catch (err) {
     console.log("  出错：" + String(err));
@@ -151,6 +156,5 @@ host.onStop(() => {
 let running = false;
 
 console.log("  就绪。等你在手机上发话——服务端不会替你说任何话。");
-console.log(`  连接中的设备: ${host.deviceCount}`);
 console.log("");
 console.log("  服务继续运行，Ctrl+C 退出。");
