@@ -63,6 +63,12 @@ export class HostServer {
    */
   private readonly pendingApprovals = new Map<string, AgentEvent>();
 
+  /**
+   * 会话流水。手机刷新、换设备、锁屏回来，都靠它把上下文接回去。
+   * 只放内存：进程没了就没了——这一版不做持久化。
+   */
+  private readonly history: unknown[] = [];
+
   constructor(private readonly options: HostOptions) {
     this.tokens = new Set([options.token]);
   }
@@ -84,23 +90,24 @@ export class HostServer {
 
   /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
   broadcastTurn(state: "running" | "idle" | "stopped"): void {
-    const payload = JSON.stringify({ type: "turn", state });
-    for (const client of this.clients) {
-      if (client.readyState === client.OPEN) client.send(payload);
-    }
+    this.emit({ type: "turn", state });
   }
 
   /** 系统提示：被策略拦截、静默放行之类，不是 Agent 说的话 */
   broadcastNotice(level: "deny" | "auto", text: string): void {
-    const payload = JSON.stringify({ type: "notice", level, text });
-    for (const client of this.clients) {
-      if (client.readyState === client.OPEN) client.send(payload);
-    }
+    this.emit({ type: "notice", level, text });
   }
 
   /** 转发 Agent 说的一句话（流式片段，原样） */
   broadcastChat(messageId: string, text: string): void {
-    const payload = JSON.stringify({ type: "chat", role: "agent", messageId, text });
+    this.emit({ type: "chat", role: "agent", messageId, text });
+  }
+
+  /** 先把消息记进流水，再推给所有在线的手机 */
+  private emit(message: unknown): void {
+    this.history.push(message);
+    if (this.history.length > 400) this.history.splice(0, this.history.length - 400);
+    const payload = JSON.stringify(message);
     for (const client of this.clients) {
       if (client.readyState === client.OPEN) client.send(payload);
     }
@@ -111,10 +118,7 @@ export class HostServer {
     if (event.type === "approval_request") {
       this.pendingApprovals.set(event.request_id, event);
     }
-    const payload = JSON.stringify({ type: "event", event });
-    for (const client of this.clients) {
-      if (client.readyState === client.OPEN) client.send(payload);
-    }
+    this.emit({ type: "event", event });
   }
 
   /** 主动忘掉一条请求（超时、Agent 自己撤回等情况） */
@@ -164,10 +168,11 @@ export class HostServer {
           task: this.options.task ?? "",
         }),
       );
-      // 补发还没被处理掉的审批：手机晚连上也能看到
-      for (const pending of this.pendingApprovals.values()) {
-        socket.send(JSON.stringify({ type: "event", event: pending }));
+      // 补发历史：刷新、换设备、锁屏回来都能接上
+      if (this.history.length > 0) {
+        socket.send(JSON.stringify({ type: "history", items: this.history }));
       }
+      // 待审批的请求已经包含在 history 里，不再单独补发，避免重复
 
       socket.on("message", (raw) => {
         let msg: any;

@@ -400,7 +400,21 @@
     socket.onmessage = (e) => {
       if (ws !== socket) return;
       let msg; try { msg = JSON.parse(e.data); } catch { return; }
+      dispatch(msg);
+    };
+  }
+
+  /** 一条消息怎么处理——实时收到和历史补发走同一条路 */
+  function dispatch(msg) {
+    {
       switch (msg.type) {
+        case "history":
+          feed.innerHTML = "";
+          stepEls.clear();
+          bubbles.clear();
+          for (const item of msg.items || []) dispatch(item);
+          toBottom(true);
+          break;
         case "hello":
           projectEl.textContent = msg.project || "";
           // 只有第一次才把任务当消息显示，重连不重复
