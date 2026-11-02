@@ -374,6 +374,11 @@
   function setConn(on, text) {
     dotEl.classList.toggle("on", on);
     connEl.textContent = text;
+    // 断线时把发按钮禁用、输入框改提示——否则点了没反应，像坏了
+    const s = document.getElementById("send");
+    const i = document.getElementById("input");
+    if (s) s.disabled = !on;
+    if (i) i.placeholder = on ? "在这里跟你电脑上的 Agent 说话…" : "还没连上，正在重试…";
   }
 
   function connect() {
@@ -462,6 +467,10 @@
   function sendPrompt() {
     const text = inputEl.value.trim();
     if (!text || running) return;
+    if (!ws || ws.readyState !== 1) {
+      add("notice deny", "还没连上，这句话没有发出去");
+      return;
+    }
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({ type: "prompt", text }));
       showUser(text);
@@ -487,6 +496,14 @@
   // 手机从后台切回来：立刻重连，不用等退避
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && (!ws || ws.readyState > 1)) {
+      retry = 800;
+      connect();
+    }
+  });
+
+  // 点右上角状态可以手动重连
+  document.querySelector("header").addEventListener("click", () => {
+    if (!ws || ws.readyState > 1) {
       retry = 800;
       connect();
     }
