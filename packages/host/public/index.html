@@ -168,7 +168,7 @@
 
   const stepEls = new Map();
   const bubbles = new Map();
-  let ws = null, retry = 800, running = false, stickBottom = true, sawTask = false;
+  let ws = null, retry = 800, running = false, stickBottom = true, sawTask = false, ackTimer = null;
 
   /* ── 滚动：贴底时自动跟随，用户翻上去就不打扰 ── */
   window.addEventListener("scroll", () => {
@@ -323,8 +323,18 @@
             : "已拒绝，等待 Agent 确认…";
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: "decision", requestId: ev.request_id, decision: d }));
+      } else {
+        verdict.textContent = "没连上，决定没发出去";
+        return;
       }
       if (navigator.vibrate) navigator.vibrate(30);
+
+      // 服务端 5 秒内没确认，就说明这一下没送到，别让人以为批了
+      ackTimer = setTimeout(() => {
+        if (!card.classList.contains("acked")) {
+          verdict.textContent = "服务端没有确认，可能没收到，请再点一次";
+        }
+      }, 5000);
     };
     deny.onclick = () => decide("reject");
     allow.onclick = () => decide("allow");
@@ -345,7 +355,8 @@
       }
     }, 1000);
 
-    toBottom(true);
+    // 滚到屏幕中间：卡片底部容易被输入框盖住，按钮就点不到了
+    requestAnimationFrame(() => card.scrollIntoView({ block: "center", behavior: "smooth" }));
     if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
   }
 
@@ -360,6 +371,8 @@
   function onAck(msg) {
     const card = feed.querySelector(`.card[data-id="${CSS.escape(msg.requestId)}"]`);
     if (!card) return;
+    card.classList.add("acked");
+    if (ackTimer) { clearTimeout(ackTimer); ackTimer = null; }
     const verdict = card.querySelector(".verdict");
     if (msg.accepted) {
       card.classList.remove("alert");

@@ -257,7 +257,7 @@ export function defaultOptions(projectId: string, now: number): TranslateOptions
     agentId: "opencode",
     projectId,
     now,
-    ttlMs: 60_000,
+    ttlMs: 180_000,
     policyVersion: "0.0.1",
     nonce: () => randomUUID(),
   };

@@ -103,7 +103,7 @@ const client = new AcpClient(
       host.broadcast(event);
       console.log("");
       console.log("  ⚠ 已推送到手机：" + event.action_display);
-      console.log("    等待决定…（60 秒不处理将作废）");
+      console.log("    等待决定…（180 秒不处理将作废）");
 
       // 超时兜底：fail-closed，到点自动拒绝
       setTimeout(() => {
@@ -113,7 +113,7 @@ const client = new AcpClient(
           console.log("  ⌛ 超时，自动拒绝");
           reply("reject");
         }
-      }, 60_000);
+      }, 180_000);
     },
     onLog: (line) => console.log("  [acp] " + String(line).slice(0, 120)),
   },
