@@ -51,8 +51,8 @@ export type Outcome =
  * 这种写法叫「依赖注入」，是让代码可测试的最便宜的办法。
  */
 export interface AdapterContext {
-  /** 秒级时间，注入以便测试 */
-  nowSeconds: number;
+  /** 当前时间（毫秒时间戳，与事件里的 timestamp 同一口径，见 ADR-0002 D4） */
+  nowMillis: number;
   /** 手机端和 Agent Host 是否连着 */
   connected: boolean;
 }
@@ -127,7 +127,7 @@ export abstract class BaseAdapter {
     // 第 4 步：过期检查。
     // [学习注] 用 `<=` 而不是 `<`：到点的瞬间就失效，不给"卡点"留缝。
     // 为什么放在翻译之后？因为要知道 expires_at，得先有事件对象。
-    if (event.expires_at <= ctx.nowSeconds) {
+    if (event.expires_at <= ctx.nowMillis) {
       return { decision: "DENY", reason: "expired" };
     }
 

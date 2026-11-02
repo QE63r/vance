@@ -1,23 +1,23 @@
-import { describe, expect, it } from "vitest";
+﻿import { describe, expect, it } from "vitest";
 import type { AgentEvent } from "@vance/core";
 import { BaseAdapter, type AdapterContext } from "../src/index.js";
 
-const NOW = 1_760_000_000;
+const NOW = 1_760_000_000_000;
 
 const baseEvent = {
   request_id: "6f1b1c8e-3f1a-4b6e-9a54-2d0f0b7c1d11",
   agent_id: "test",
   project_id: "vance",
   timestamp: NOW,
-  action_digest: "a".repeat(64),
+  raw_digest: "a".repeat(64),
+  raw_ref: { key: "a".repeat(64), length: 42 },
   nonce: "0123456789abcdef",
-  expires_at: NOW + 60,
+  expires_at: NOW + 60_000,
   policy_version: "0.0.1",
   signer: "host:test",
   signature: "sig",
   type: "approval_request",
-  action: "rm -rf /tmp/x",
-  risk: "high",
+  action_display: "rm -rf /tmp/x",
   facts: {},
 } as unknown as AgentEvent;
 
@@ -34,7 +34,7 @@ class TestAdapter extends BaseAdapter {
 }
 
 const ctx = (over: Partial<AdapterContext> = {}): AdapterContext => ({
-  nowSeconds: NOW,
+  nowMillis: NOW,
   connected: true,
   ...over,
 });
@@ -61,7 +61,7 @@ describe("fail-closed 基类", () => {
   });
 
   it("过期即拒绝", () => {
-    const out = new TestAdapter("ok").handle({}, ctx({ nowSeconds: NOW + 61 }));
+    const out = new TestAdapter("ok").handle({}, ctx({ nowMillis: NOW + 61_000 }));
     expect(out).toEqual({ decision: "DENY", reason: "expired" });
   });
 
