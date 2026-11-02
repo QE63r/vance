@@ -44,7 +44,6 @@ const host = new HostServer({
   token,
   pagePath: PAGE,
   projectName: "sandbox",
-  task: PROMPT,
 });
 
 host.onDecision(({ requestId, decision }) => {
@@ -125,20 +124,6 @@ console.log("  session: " + sessionId);
 console.log("  指令: " + PROMPT);
 console.log("");
 
-// 等手机连上再开始，避免"审批已经发出、人还没打开页面"
-if (host.deviceCount === 0) {
-  console.log("  等待手机连接后再开始…");
-  await new Promise((resolve) => {
-    const timer = setInterval(() => {
-      if (host.deviceCount > 0) {
-        clearInterval(timer);
-        resolve();
-      }
-    }, 300);
-  });
-  console.log("  手机已连接，开始执行");
-  console.log("");
-}
 
 // 手机上发来的指令 → 交给 Agent 接着干
 host.onPrompt(async (text) => {
@@ -165,12 +150,7 @@ host.onStop(() => {
 
 let running = false;
 
-running = true;
-host.broadcastTurn("running");
-const reason = await client.runTurn(PROMPT);
-running = false;
-host.broadcastTurn("idle");
-console.log("  本轮结束: " + reason);
+console.log("  就绪。等你在手机上发话——服务端不会替你说任何话。");
 console.log(`  连接中的设备: ${host.deviceCount}`);
 console.log("");
 console.log("  服务继续运行，Ctrl+C 退出。");
