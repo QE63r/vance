@@ -12,8 +12,9 @@
  */
 
 import { createServer, type Server } from "node:http";
-import { networkInterfaces } from "node:os";
-import { readFileSync } from "node:fs";
+import { homedir, networkInterfaces } from "node:os";
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
 
@@ -69,8 +70,23 @@ export class HostServer {
    */
   private readonly history: unknown[] = [];
 
+  /** 会话流水落盘，重启后还能接上 */
+  private readonly historyFile = join(homedir(), ".vance", "history.jsonl");
+
   constructor(private readonly options: HostOptions) {
     this.tokens = new Set([options.token]);
+    this.loadHistory();
+  }
+
+  private loadHistory(): void {
+    try {
+      if (!existsSync(this.historyFile)) return;
+      const lines = readFileSync(this.historyFile, "utf8").split("\n").filter(Boolean).slice(-400);
+      for (const line of lines) {
+        try { this.history.push(JSON.parse(line)); } catch {}
+      }
+      console.log(`[host] 恢复历史 ${this.history.length} 条`);
+    } catch {}
   }
 
   /** 谁来决定；返回 false 表示"这条请求已经失效或不存在" */
@@ -107,6 +123,10 @@ export class HostServer {
   private emit(message: unknown): void {
     this.history.push(message);
     if (this.history.length > 400) this.history.splice(0, this.history.length - 400);
+    try {
+      mkdirSync(dirname(this.historyFile), { recursive: true });
+      appendFileSync(this.historyFile, JSON.stringify(message) + "\n");
+    } catch {}
     const payload = JSON.stringify(message);
     for (const client of this.clients) {
       if (client.readyState === client.OPEN) client.send(payload);
