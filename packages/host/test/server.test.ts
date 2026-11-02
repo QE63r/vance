@@ -65,11 +65,12 @@ describe("HostServer", () => {
     // 先广播——此时没有任何设备在线
     server.broadcast(approval);
 
-    // 后连上的手机应当收到 hello + 补发的审批
+    // 后连上的手机应当收到 hello + 一条 history，里面带着那条审批
     const msgs = await listen(port, "t2", 2);
     expect(msgs[0].type).toBe("hello");
-    expect(msgs[1].type).toBe("event");
-    expect(msgs[1].event.request_id).toBe("call_1");
+    expect(msgs[1].type).toBe("history");
+    const items = msgs[1].items ?? [];
+    expect(items.some((m: any) => m.type === "event" && m.event.request_id === "call_1")).toBe(true);
   });
 
   it("口令不对直接断开", async () => {
