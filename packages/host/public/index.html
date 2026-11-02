@@ -487,7 +487,12 @@
 
   function sendPrompt() {
     const text = inputEl.value.trim();
-    if (!text || running) return;
+    if (!text) return;
+    if (running) {
+      // 不静默吞掉：告诉人为什么没发出去
+      hintEl.textContent = "上一轮还没结束，等它停下来再发";
+      return;
+    }
     if (!ws || ws.readyState !== 1) {
       add("notice deny", "还没连上，这句话没有发出去");
       return;

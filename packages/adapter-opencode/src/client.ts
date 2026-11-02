@@ -45,6 +45,8 @@ export class AcpClient {
   private sessionId: string | null = null;
   private opts: Required<Omit<ClientOptions, "now">> & { now: () => number };
   private settled: ((reason: string) => void) | null = null;
+  /** 当前这一轮 session/prompt 的 JSON-RPC id；用它来收尾 */
+  private turnId: number | null = null;
 
   constructor(
     options: ClientOptions,
@@ -103,9 +105,11 @@ export class AcpClient {
     if (!this.sessionId) throw new Error("session not started");
     return new Promise((resolve) => {
       this.settled = resolve;
+      const id = this.nextId++;
+      this.turnId = id;
       this.send({
         jsonrpc: "2.0",
-        id: this.nextId++,
+        id,
         method: "session/prompt",
         params: { sessionId: this.sessionId, prompt: [{ type: "text", text }] },
       });
@@ -144,6 +148,16 @@ export class AcpClient {
 
     // 响应：协议自身的握手
     if (msg.id !== undefined && msg.method === undefined) {
+      // 这一轮的应答（不管成功还是失败）都必须收尾，
+      // 否则界面会永远停在"正在执行"，人也发不出下一句。
+      if (this.turnId !== null && msg.id === this.turnId) {
+        if (msg.error) this.log(`[acp] prompt 失败：${JSON.stringify(msg.error).slice(0, 140)}`);
+        this.settled?.(msg.error ? "error" : String(msg.result?.stopReason ?? "end_turn"));
+        this.settled = null;
+        this.turnId = null;
+        return;
+      }
+
       if (msg.error) {
         this.onSessionFailed?.(new Error(JSON.stringify(msg.error)));
         return;
