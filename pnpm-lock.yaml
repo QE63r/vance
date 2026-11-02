@@ -209,6 +209,19 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
 
+  packages/host:
+    dependencies:
+      '@vance/core':
+        specifier: workspace:*
+        version: link:../core
+      ws:
+        specifier: ^8.18.0
+        version: 8.22.0
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.5.0
+        version: 8.18.2
+
   packages/relay:
     dependencies:
       '@vance/core':

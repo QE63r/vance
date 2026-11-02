@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0f1419" />
+<title>梵境 · 审批</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --card: #1a222c;
+    --line: #2a3644;
+    --text: #e6edf3;
+    --dim: #8b98a5;
+    --accent: #3a6e7e;
+    --ok: #3f7d5a;
+    --danger: #b8433a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--bg); z-index: 2;
+  }
+  .brand { font-weight: 600; letter-spacing: .02em; }
+  .brand small { color: var(--dim); font-weight: 400; margin-left: 6px; }
+  .status { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); }
+  .dot.on { background: var(--ok); }
+
+  main { padding: 16px 16px 40px; max-width: 640px; margin: 0 auto; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 14px; padding: 16px; margin-bottom: 14px;
+  }
+  .card.alert { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(184,67,58,.25); }
+
+  .kicker { font-size: 12px; letter-spacing: .08em; color: var(--danger); text-transform: uppercase; }
+  .action {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 15px; line-height: 1.5; margin: 10px 0 12px;
+    word-break: break-all; background: #11181f; padding: 12px; border-radius: 10px;
+    border: 1px solid var(--line);
+  }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px 18px; font-size: 13px; color: var(--dim); }
+  .meta b { color: var(--text); font-weight: 500; }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+  button {
+    font: inherit; font-weight: 600; border: 0; border-radius: 12px;
+    padding: 16px 10px; color: #fff; cursor: pointer; transition: opacity .15s;
+  }
+  button:disabled { opacity: .45; cursor: default; }
+  .deny { background: var(--danger); }
+  .allow { background: var(--ok); }
+  .verdict { margin-top: 12px; font-size: 14px; color: var(--dim); text-align: center; }
+
+  h2 { font-size: 13px; color: var(--dim); font-weight: 500; letter-spacing: .08em; text-transform: uppercase; margin: 26px 0 10px; }
+
+  ul.steps { list-style: none; margin: 0; padding: 0; }
+  ul.steps li {
+    display: flex; gap: 10px; align-items: flex-start;
+    padding: 10px 2px; border-bottom: 1px solid #202a35; font-size: 15px;
+  }
+  ul.steps li:last-child { border-bottom: 0; }
+  .mark { width: 18px; flex: 0 0 18px; text-align: center; line-height: 1.5; }
+  .mark.pending { color: #4a5867; }
+  .mark.running { color: #5aa9c9; animation: pulse 1.2s infinite; }
+  .mark.done { color: #63b381; }
+  .mark.failed { color: #d0564c; }
+  .title { flex: 1; word-break: break-word; }
+  .title.done { color: var(--dim); }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .empty { color: var(--dim); font-size: 14px; }
+  footer { text-align: center; color: #55636f; font-size: 12px; margin-top: 28px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">梵境 <small id="project">—</small></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="conn">连接中…</span></div>
+</header>
+
+<main>
+  <div id="approvals"></div>
+
+  <h2>进度</h2>
+  <ul class="steps" id="steps"></ul>
+  <div class="empty" id="empty">还没有步骤。让它干点活。</div>
+
+  <footer>局域网直连 · 数据不出这台电脑</footer>
+</main>
+
+<script>
+(() => {
+  const token = new URLSearchParams(location.search).get("token") || "";
+  const projectEl = document.getElementById("project");
+  const connEl = document.getElementById("conn");
+  const dotEl = document.getElementById("dot");
+  const stepsEl = document.getElementById("steps");
+  const emptyEl = document.getElementById("empty");
+  const approvalsEl = document.getElementById("approvals");
+
+  const MARK = { pending: "○", running: "●", done: "✓", failed: "✗" };
+  const stepEls = new Map();
+  let ws = null;
+  let retry = 800;
+
+  function setConn(on, text) {
+    dotEl.classList.toggle("on", on);
+    connEl.textContent = text;
+  }
+
+  function connect() {
+    const proto = location.protocol === "https:" ? "wss" : "ws";
+    ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+
+    ws.onopen = () => { retry = 800; setConn(true, "已连接"); };
+    ws.onclose = () => {
+      setConn(false, "已断开，重连中…");
+      setTimeout(connect, retry = Math.min(retry * 1.6, 8000));
+    };
+    ws.onerror = () => {};
+    ws.onmessage = (e) => {
+      let msg; try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === "hello") { projectEl.textContent = msg.project || ""; }
+      if (msg.type === "event") onEvent(msg.event);
+      if (msg.type === "ack") onAck(msg);
+    };
+  }
+
+  function onEvent(ev) {
+    if (!ev || !ev.type) return;
+    if (ev.type === "status_update" && ev.step) upsertStep(ev.step);
+    if (ev.type === "approval_request") renderApproval(ev);
+  }
+
+  function upsertStep(step) {
+    let el = stepEls.get(step.id);
+    if (!el) {
+      el = document.createElement("li");
+      el.innerHTML = `<span class="mark"></span><span class="title"></span>`;
+      stepsEl.appendChild(el);
+      stepEls.set(step.id, el);
+      emptyEl.style.display = "none";
+    }
+    const mark = el.querySelector(".mark");
+    const title = el.querySelector(".title");
+    mark.className = "mark " + step.status;
+    mark.textContent = MARK[step.status] || "○";
+    title.textContent = step.title;
+    title.className = "title " + (step.status === "done" ? "done" : "");
+  }
+
+  function renderApproval(ev) {
+    const card = document.createElement("div");
+    card.className = "card alert";
+    card.dataset.id = ev.request_id;
+
+    const left = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));
+    card.innerHTML = `
+      <div class="kicker">需要你批准</div>
+      <div class="action"></div>
+      <div class="meta">
+        <span>类型 <b class="kind"></b></span>
+        <span>位置 <b class="loc"></b></span>
+        <span>原文 <b>${ev.raw_ref ? ev.raw_ref.length : 0}</b> 字节</span>
+        <span>摘要 <b>${(ev.raw_digest || "").slice(0, 8)}…</b></span>
+      </div>
+      <div class="actions">
+        <button class="deny">拒绝</button>
+        <button class="allow">批准</button>
+      </div>
+      <div class="verdict">${left} 秒内不处理将自动失效</div>`;
+
+    card.querySelector(".action").textContent = ev.action_display || "(无动作)";
+    card.querySelector(".kind").textContent = (ev.facts && ev.facts.kind) || "-";
+    card.querySelector(".loc").textContent = (ev.facts && ev.facts.locations) || "-";
+
+    const [deny, allow] = card.querySelectorAll("button");
+    const verdict = card.querySelector(".verdict");
+
+    const decide = (d) => {
+      deny.disabled = true; allow.disabled = true;
+      verdict.textContent = d === "allow" ? "已批准，等待 Agent 确认…" : "已拒绝，等待 Agent 确认…";
+      ws && ws.readyState === 1 && ws.send(JSON.stringify({ type: "decision", requestId: ev.request_id, decision: d }));
+      if (navigator.vibrate) navigator.vibrate(30);
+    };
+    deny.onclick = () => decide("reject");
+    allow.onclick = () => decide("allow");
+
+    const tick = setInterval(() => {
+      const s = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));
+      if (s <= 0) {
+        clearInterval(tick);
+        if (!deny.disabled) {
+          deny.disabled = allow.disabled = true;
+          verdict.textContent = "已超时，本次批准作废";
+          card.classList.remove("alert");
+        }
+      } else if (!deny.disabled) {
+        verdict.textContent = `${s} 秒内不处理将自动失效`;
+      }
+    }, 1000);
+
+    approvalsEl.prepend(card);
+    if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+  }
+
+  function onAck(msg) {
+    const card = approvalsEl.querySelector(`.card[data-id="${CSS.escape(msg.requestId)}"]`);
+    if (!card) return;
+    const verdict = card.querySelector(".verdict");
+    if (msg.accepted) {
+      card.classList.remove("alert");
+      verdict.textContent = verdict.textContent.replace("等待 Agent 确认…", "已生效");
+    } else {
+      verdict.textContent = "这条请求已失效";
+    }
+  }
+
+  connect();
+})();
+</script>
+</body>
+</html>
