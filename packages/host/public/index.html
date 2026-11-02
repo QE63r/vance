@@ -274,6 +274,9 @@
   /** 审批卡片：动作永远完整显示（这里绝不截断），
    *  技术字段（字节数、摘要）收进"详情"，不占主位。 */
   function renderApproval(ev) {
+    // 同一条请求可能被补发多次（重连、多设备），只渲染一张卡
+    if (approvalsEl.querySelector(`.card[data-id="${CSS.escape(ev.request_id)}"]`)) return;
+
     const card = document.createElement("div");
     card.className = "card alert";
     card.dataset.id = ev.request_id;
