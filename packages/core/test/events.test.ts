@@ -68,6 +68,11 @@ describe("审批请求", () => {
     const { action_display: _omit, ...rest } = approval;
     expect(ApprovalRequest.safeParse(rest).success).toBe(false);
   });
+
+  it("ADR-0004：不再接受 AI 意图摘要（要花钱，还可能猜错）", () => {
+    const withSummary = { ...approval, intent_summary: "清理测试数据" };
+    expect(ApprovalRequest.safeParse(withSummary).success).toBe(false);
+  });
 });
 
 describe("状态更新（D5 的另一半：宽容）", () => {
@@ -82,6 +87,29 @@ describe("状态更新（D5 的另一半：宽容）", () => {
     if (parsed.success) {
       expect("something_new" in parsed.data).toBe(false);
     }
+  });
+
+  it("步骤：可以带上一句「正在做什么」", () => {
+    const parsed = StatusUpdate.safeParse({
+      ...valid,
+      type: "status_update",
+      state: "running",
+      step: { id: "call_00_abc", title: "删除 data.csv", kind: "execute", status: "running" },
+    });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.step?.title).toBe("删除 data.csv");
+    }
+  });
+
+  it("步骤状态只认四种，写错就拒绝", () => {
+    const parsed = StatusUpdate.safeParse({
+      ...valid,
+      type: "status_update",
+      state: "running",
+      step: { id: "x", title: "y", status: "已完成" },
+    });
+    expect(parsed.success).toBe(false);
   });
 });
 

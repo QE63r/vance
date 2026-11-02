@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * ACP 桥接实验：把 opencode 发出的权限请求，翻译成梵境的 ApprovalRequest。
  *
@@ -23,6 +23,9 @@ const child = spawn("opencode.cmd", ["acp"], { shell: true, cwd: CWD, stdio: ["p
 let buf = "";
 let sessionId = null;
 let seq = 0;
+let done = 0;
+let failed = 0;
+const lastStatus = new Map();
 
 const send = (obj) => child.stdin.write(JSON.stringify(obj) + "\n");
 
@@ -77,7 +80,34 @@ child.stdout.on("data", (chunk) => {
       continue;
     }
 
-    if (msg.method) continue; // 其余通知不关心，原型阶段
+    // 步骤流：Agent 每做一步，都会推一条 session/update。
+    // 这就是「监控反馈」的数据源——不用模型，纯翻译。
+    if (msg.method === "session/update") {
+      const u = msg.params?.update ?? {};
+      const kind = u.sessionUpdate;
+      const id = u.toolCallId ?? "";
+      const title = u.title ?? u.toolCallId ?? "(未命名)";
+
+      if (kind === "tool_call") {
+        if (!lastStatus.has(id)) {
+          lastStatus.set(id, "pending");
+          console.log(`  ○ 待执行   ${title}`);
+        }
+      } else if (kind === "tool_call_update") {
+        const st = u.status;
+        if (st && lastStatus.get(id) !== st) {
+          lastStatus.set(id, st);
+          const mark = st === "completed" ? "✓" : st === "failed" ? "✗" : st === "in_progress" ? "●" : "○";
+          const verb = st === "completed" ? "完成" : st === "failed" ? "失败" : st === "in_progress" ? "执行中" : st;
+          console.log(`  ${mark} ${verb}   ${title}`);
+          if (st === "completed") done += 1;
+          if (st === "failed") failed += 1;
+        }
+      }
+      continue;
+    }
+
+    if (msg.method) continue;
 
     if (msg.id === 1 && msg.result) {
       console.error("[bridge] initialize ok: " + msg.result.agentInfo?.name);
@@ -96,6 +126,8 @@ child.stdout.on("data", (chunk) => {
         params: { sessionId, prompt: [{ type: "text", text: PROMPT }] },
       });
     } else if (msg.id === 3) {
+      console.log("");
+      console.log(`—— 本次共 ${done} 步完成、${failed} 步失败 ——`);
       console.error("[bridge] prompt 结束: " + JSON.stringify(msg.result?.stopReason ?? msg.error));
       child.kill();
       process.exit(0);
