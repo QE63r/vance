@@ -26,6 +26,11 @@ export interface ClientHandlers {
   /** 每推进一步 */
   onStep?: (event: StatusUpdate) => void;
   /**
+   * Agent 自己说的话（流式）。这是"原内容"——不是我们生成的摘要，
+   * 是它在回复里本来就会输出的文本。
+   */
+  onChat?: (messageId: string, text: string) => void;
+  /**
    * 需要人决定。调用 reply("allow" | "reject") 把决定回给 Agent。
    * 不调 reply 就等于一直挂着——直到超时由外层处置。
    */
@@ -165,6 +170,18 @@ export class AcpClient {
     }
 
     // 通知与请求
+    // Agent 的回复文本：原样转发，不加工
+    if (
+      msg.method === "session/update" &&
+      (msg.params?.update?.sessionUpdate === "agent_message_chunk" ||
+        msg.params?.update?.sessionUpdate === "agent_thought_chunk")
+    ) {
+      const u = msg.params.update;
+      const text = typeof u.content?.text === "string" ? u.content.text : "";
+      if (text) this.handlers.onChat?.(String(u.messageId ?? "msg"), text);
+      return;
+    }
+
     const translated = translateAcpLine(line, defaultOptions(this.opts.projectId, this.opts.now()));
 
     if (translated.kind === "step") {
