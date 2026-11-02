@@ -387,15 +387,36 @@
     const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${encodeURIComponent(token)}`);
     ws = socket;
 
+    // 连接超时：卡在 CONNECTING 的 socket 会挡住后面所有重连，必须主动掐掉
+    const connectTimeout = setTimeout(() => {
+      if (socket.readyState !== 1) {
+        try { socket.close(); } catch {}
+      }
+    }, 8000);
+
     socket.onopen = () => {
+      clearTimeout(connectTimeout);
       if (ws !== socket) return; // 迟到的旧连接，忽略
       retry = 800;
       setConn(true, "已连接");
     };
 
-    socket.onclose = () => {
+    socket.onclose = (ev) => {
+      clearTimeout(connectTimeout);
       if (ws !== socket) return; // 旧连接关闭，不碰新连接的状态
       ws = null;
+
+      // 4001 = 服务端说口令不对。这时候重连一万次也没用，必须让人换地址。
+      if (ev && ev.code === 4001) {
+        setConn(false, "口令无效");
+        const hint = document.getElementById("hint");
+        if (hint) hint.textContent = "地址里的口令已失效，请用电脑终端里打印的新地址打开";
+        const s = document.getElementById("send");
+        if (s) s.disabled = true;
+        add("notice deny", "口令不对：请回到电脑终端，复制新打印的完整地址重新打开");
+        return;
+      }
+
       setConn(false, "已断开，重连中…");
       setTimeout(connect, (retry = Math.min(retry * 1.6, 8000)));
     };
