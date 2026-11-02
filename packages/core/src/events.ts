@@ -198,3 +198,5 @@ export const AgentEvent = z.discriminatedUnion("type", [
 export type AgentEvent = z.infer<typeof AgentEvent>;
 export type ApprovalRequest = z.infer<typeof ApprovalRequest>;
 export type ToolResult = z.infer<typeof ToolResult>;
+export type StatusUpdate = z.infer<typeof StatusUpdate>;
+export type Question = z.infer<typeof Question>;
