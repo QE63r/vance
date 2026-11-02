@@ -94,6 +94,13 @@
   button:disabled { opacity: .45; cursor: default; }
   .deny { background: var(--danger); }
   .allow { background: var(--ok); }
+  .remember {
+    display: block; width: 100%; margin-top: 8px; padding: 10px;
+    background: transparent; border: 1px solid var(--line);
+    color: var(--dim); font-size: 13px; font-weight: 500;
+  }
+  .notice { align-self: center; font-size: 12px; color: var(--dim); padding: 2px 0; }
+  .notice.deny { color: #d0564c; }
   .verdict { margin-top: 10px; font-size: 13px; color: var(--dim); text-align: center; }
   details { margin-top: 10px; font-size: 12px; color: var(--dim); }
   details summary { cursor: pointer; list-style: none; padding: 3px 0; }
@@ -269,6 +276,10 @@
     actions.className = "actions";
     actions.innerHTML = `<button class="deny">拒绝</button><button class="allow">批准</button>`;
 
+    const memorize = document.createElement("button");
+    memorize.className = "remember";
+    memorize.textContent = "记住这个选择（下次不再问）";
+
     const verdict = document.createElement("div");
     verdict.className = "verdict";
 
@@ -296,7 +307,7 @@
       card.append(box);
     }
 
-    card.append(meta, actions, verdict, details);
+    card.append(meta, actions, memorize, verdict, details);
     feed.appendChild(card);
 
     const left = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));
@@ -305,7 +316,11 @@
     const [deny, allow] = actions.querySelectorAll("button");
     const decide = (d) => {
       deny.disabled = allow.disabled = true;
-      verdict.textContent = d === "allow" ? "已批准，等待 Agent 确认…" : "已拒绝，等待 Agent 确认…";
+      memorize.disabled = true;
+      verdict.textContent =
+        d === "allow" ? "已批准，等待 Agent 确认…"
+          : d === "remember" ? "已批准，以后同类操作不再问你…"
+            : "已拒绝，等待 Agent 确认…";
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: "decision", requestId: ev.request_id, decision: d }));
       }
@@ -313,6 +328,7 @@
     };
     deny.onclick = () => decide("reject");
     allow.onclick = () => decide("allow");
+    memorize.onclick = () => decide("remember");
 
     const tick = setInterval(() => {
       const s = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));
@@ -383,6 +399,11 @@
           if (msg.event?.type === "approval_request") showApproval(msg.event);
           break;
         case "ack": onAck(msg); break;
+        case "notice": {
+          const n = add("notice " + (msg.level === "deny" ? "deny" : ""), msg.text || "");
+          n.classList.add("notice");
+          break;
+        }
         case "turn":
           setRunning(msg.state === "running", msg.state);
           if (msg.state === "idle") {

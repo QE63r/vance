@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent Host 的最小实现：一个网页 + 一条 WebSocket。
  *
  * 它只做搬运：
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
 
-export type Decision = "allow" | "reject";
+export type Decision = "allow" | "reject" | "remember";
 
 export interface HostOptions {
   /** 端口，0 表示让系统分配 */
@@ -85,6 +85,14 @@ export class HostServer {
   /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
   broadcastTurn(state: "running" | "idle" | "stopped"): void {
     const payload = JSON.stringify({ type: "turn", state });
+    for (const client of this.clients) {
+      if (client.readyState === client.OPEN) client.send(payload);
+    }
+  }
+
+  /** 系统提示：被策略拦截、静默放行之类，不是 Agent 说的话 */
+  broadcastNotice(level: "deny" | "auto", text: string): void {
+    const payload = JSON.stringify({ type: "notice", level, text });
     for (const client of this.clients) {
       if (client.readyState === client.OPEN) client.send(payload);
     }
@@ -177,7 +185,8 @@ export class HostServer {
           return;
         }
         if (msg?.type !== "decision" || typeof msg.requestId !== "string") return;
-        const decision: Decision = msg.decision === "allow" ? "allow" : "reject";
+        const decision: Decision =
+          msg.decision === "allow" ? "allow" : msg.decision === "remember" ? "remember" : "reject";
         const accepted = this.handler?.({ requestId: msg.requestId, decision }) ?? false;
         if (accepted) this.pendingApprovals.delete(msg.requestId);
         socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted }));

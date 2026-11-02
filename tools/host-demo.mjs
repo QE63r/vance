@@ -5,7 +5,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer } from "../packages/host/dist/index.js";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
-import { classifyApproval } from "../packages/policy/dist/index.js";
+import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
@@ -17,6 +19,14 @@ const token = randomBytes(4).toString("hex");
 
 /** 等待人决定的请求：request_id → 回给 Agent 的函数 */
 const pending = new Map();
+const RULES = join(homedir(), ".vance", "rules.json");
+const remembered = (() => {
+  try { return JSON.parse(readFileSync(RULES, "utf8")).allow ?? []; } catch { return []; }
+})();
+function saveRules() {
+  mkdirSync(dirname(RULES), { recursive: true });
+  writeFileSync(RULES, JSON.stringify({ allow: remembered }, null, 2));
+}
 
 const host = new HostServer({
   port: PORT,
@@ -27,9 +37,14 @@ const host = new HostServer({
 });
 
 host.onDecision(({ requestId, decision }) => {
-  const reply = pending.get(requestId);
-  if (!reply) return false;
-  reply(decision);
+  const entry = pending.get(requestId);
+  if (!entry) return false;
+  if (decision === "remember" && entry.key && !remembered.includes(entry.key)) {
+    remembered.push(entry.key);
+    saveRules();
+    console.log(`  ★ 已记住：${entry.key.slice(0, 60)}`);
+  }
+  entry.reply(decision === "remember" ? "allow" : decision);
   pending.delete(requestId);
   console.log(`[host] 手机决定：${decision}（${requestId.slice(0, 12)}…）`);
   return true;
@@ -57,14 +72,24 @@ const client = new AcpClient(
       console.log(`  ${mark} ${event.step?.title}`);
     },
     onApproval: (event, reply) => {
-      // 安静的来源：只读动作不打扰人，直接放行
-      const verdict = classifyApproval(event);
+      // 判定顺序：禁止 → 记住 → 只读 → 问人
+      const verdict = classifyApproval(event, remembered);
+
+      if (verdict.deny) {
+        console.log(`  ⛔ 拦截（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
+        host.broadcastNotice("deny", `已拦截：${verdict.reason}`);
+        reply("reject");
+        return;
+      }
+
       if (verdict.auto) {
         console.log(`  · 静默放行（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
+        host.broadcastNotice("auto", `已静默放行：${String(event.action_display).slice(0, 40)}`);
         reply("allow");
         return;
       }
-      pending.set(event.request_id, reply);
+
+      pending.set(event.request_id, { reply, key: treatKey(event) });
       host.broadcast(event);
       console.log("");
       console.log("  ⚠ 已推送到手机：" + event.action_display);
