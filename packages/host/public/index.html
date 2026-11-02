@@ -74,6 +74,18 @@
   .meta { display: flex; flex-wrap: wrap; gap: 6px 10px; font-size: 12.5px; color: var(--dim); }
   .meta .tag { display: inline-flex; gap: 5px; background: #141c24; border: 1px solid var(--line); padding: 3px 8px; border-radius: 999px; }
   .meta b { color: var(--text); font-weight: 500; }
+
+  /* 编辑类的 diff：绿加红删，来自 Agent 自己的 rawInput */
+  .diff {
+    margin: 8px 0 2px; background: #11181f; border: 1px solid var(--line);
+    border-radius: 9px; padding: 8px 10px; max-height: 220px; overflow: auto;
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+    font-size: 12px; line-height: 1.5;
+  }
+  .diff .line { white-space: pre-wrap; word-break: break-all; color: #8b98a5; }
+  .diff .add { color: #7ec699; background: rgba(126,198,153,.08); }
+  .diff .del { color: #e07b72; background: rgba(224,123,114,.08); }
+  .diff .hunk { color: #5d6a77; }
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   button {
     font: inherit; font-weight: 600; border: 0; border-radius: 11px;
@@ -247,8 +259,11 @@
       meta.append(s);
     };
     tag("类型", KIND[facts.kind] || facts.kind);
-    tag("位置", facts.locations);
+    tag("位置", facts.locations === facts.files ? "" : facts.locations);
     tag("文件", facts.files);
+    if (typeof facts.adds === "number" || typeof facts.removes === "number") {
+      tag("改动", `+${facts.adds ?? 0} −${facts.removes ?? 0}`);
+    }
 
     const actions = document.createElement("div");
     actions.className = "actions";
@@ -265,7 +280,23 @@
     rowEl.textContent = `原文 ${ev.raw_ref ? ev.raw_ref.length : 0} 字节 · 摘要 ${(ev.raw_digest || "").slice(0, 16)}…`;
     details.append(summary, rowEl);
 
-    card.append(kicker, action, meta, actions, verdict, details);
+    card.append(kicker, action);
+
+    if (ev.preview) {
+      const box = document.createElement("div");
+      box.className = "diff";
+      for (const line of String(ev.preview).split("\n").slice(0, 80)) {
+        const d = document.createElement("div");
+        d.className =
+          "line " +
+          (line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@@") ? "hunk" : "");
+        d.textContent = line || " ";
+        box.append(d);
+      }
+      card.append(box);
+    }
+
+    card.append(meta, actions, verdict, details);
     feed.appendChild(card);
 
     const left = Math.max(0, Math.round((ev.expires_at - Date.now()) / 1000));

@@ -92,6 +92,17 @@ function asString(v: unknown, fallback: string): string {
 }
 
 /**
+ * 把 unified diff 里没用的头部砍掉，只留 hunk。
+ * 不改变任何一行的内容——只是去掉"Index:/===/---/+++"这四行噪音。
+ */
+export function trimDiff(diff: string): string {
+  const lines = diff.split("\n");
+  const start = lines.findIndex((l) => l.startsWith("@@"));
+  const body = (start >= 0 ? lines.slice(start) : lines).join("\n").trimEnd();
+  return body.slice(0, 4000);
+}
+
+/**
  * 从命令里提取"涉及哪些文件"。
  *
  * 只认被引号括起来的路径——这是命令里唯一能确定的东西。
@@ -137,17 +148,31 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
       : "";
 
     const title = asString(toolCall.title, toolCallId);
+    const kind = asString(toolCall.kind, "unknown");
+
+    // 编辑类：Agent 会在 rawInput.diff 里给出 unified diff。
+    // 这是"要改什么"的唯一可靠来源，原样截取。
+    const rawDiff = typeof toolCall.rawInput?.diff === "string" ? toolCall.rawInput.diff : "";
+    const preview = rawDiff ? trimDiff(rawDiff) : undefined;
+
+    let adds = 0;
+    let removes = 0;
+    for (const line of rawDiff.split("\n")) {
+      if (line.startsWith("+") && !line.startsWith("+++")) adds += 1;
+      else if (line.startsWith("-") && !line.startsWith("---")) removes += 1;
+    }
 
     const candidate = {
       ...envelope(line, toolCallId, opts),
       type: "approval_request" as const,
       action_display: title,
+      ...(preview ? { preview } : {}),
       facts: {
-        kind: asString(toolCall.kind, "unknown"),
+        kind,
         status: asString(toolCall.status, "pending"),
         locations,
-        // 命令里能确定的文件（引号内的路径）。拿不到就是空，不猜。
-        files: asString(toolCall.kind, "") === "edit" ? title : extractPaths(title),
+        files: kind === "edit" ? asString(toolCall.rawInput?.filepath, title) : extractPaths(title),
+        ...(kind === "edit" ? { adds, removes } : {}),
       },
     };
 

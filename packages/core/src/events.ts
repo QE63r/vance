@@ -117,6 +117,13 @@ export const ApprovalRequest = EventEnvelope.extend({
   facts: z
     .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
     .default({}),
+  /**
+   * 编辑类动作的差异预览。
+   *
+   * 来自 Agent 自己的 rawInput.diff —— 原样截取，我们不做任何加工。
+   * 没有 diff 的工具就空着；**绝不自己生成一个"看起来像 diff"的东西**。
+   */
+  preview: z.string().max(8000).optional(),
   // 这里故意没有 intent_summary（AI 推测意图）：
   // 它要花钱、可能猜错，而事实句已经够人做判断。见 ADR-0004。
 }).strict();
