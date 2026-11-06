@@ -1,7 +1,7 @@
 ﻿// 把三块接起来：Host 网页 + ACP Agent + 决定回传。
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { createHash, randomBytes } from "node:crypto";
-import { spawn } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
@@ -215,6 +215,30 @@ if (USE_TUNNEL) {
   ];
   const exe = CANDIDATES.find((p) => p === "cloudflared" || existsSync(p)) ?? "cloudflared";
 
+  // 如果隧道已经由 Tailscale Funnel 提供，直接用它（地址永久固定）
+  let funnelDone = false;
+  try {
+    const out = execSync("tailscale funnel status", { encoding: "utf8", timeout: 5000 });
+    const m = out.match(/https:\/\/[a-z0-9-]+\.ts\.net\/?/i);
+    if (m) {
+      const publicUrl = `${m[0].replace(/\/$/, "")}/?token=${token}`;
+      console.log("");
+      console.log("  ── 公网地址（Tailscale Funnel，永久固定）──────");
+      qrcode.generate(publicUrl, { small: true });
+      console.log(`  ${publicUrl}`);
+      console.log("  ────────────────────────────────────────");
+      try {
+        writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
+        void QRCode.toFile(join(homedir(), ".vance", "qr.png"), publicUrl, {
+          width: 720, margin: 2, color: { dark: "#11181f", light: "#ffffff" },
+        });
+      } catch {}
+      console.log("");
+      funnelDone = true;
+    }
+  } catch {}
+
+  if (!funnelDone) {
   // 有命名隧道配置就走固定地址；否则用临时隧道（地址每次变）
   const namedCfgPath = join(homedir(), ".vance", "tunnel.json");
   let named = null;
@@ -285,6 +309,7 @@ if (USE_TUNNEL) {
   cf.stdout.on("data", scan);
   cf.stderr.on("data", scan);
   cf.on("exit", (code) => console.log(`  [tunnel] cloudflared 退出（${code}）`));
+  }
   }
 }
 

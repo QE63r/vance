@@ -8,6 +8,7 @@ rem ===============================================================
 setlocal
 set "PATH=%SystemRoot%\System32;%SystemRoot%;C:\Program Files\nodejs;%APPDATA%\npm;%PATH%"
 cd /d "%~dp0"
+chcp 936 >nul
 
 rem 已经在跑？直接把地址亮出来就走
 for /f "tokens=*" %%c in ('netstat -ano ^| findstr /r /c:"LISTENING" ^| findstr ":8787"') do goto :already
@@ -36,8 +37,7 @@ if exist "%USERPROFILE%\.vance\tunnel-url.txt" (
   echo.
 )
 if exist "%USERPROFILE%\.vance\qr.png" (
-  start "" "%USERPROFILE%\.vance\qr.png"
-  echo   二维码已打开（%USERPROFILE%\.vance\qr.png^)
+  echo   二维码图片：%USERPROFILE%\.vance\qr.png
 )
 echo.
 goto :eof
