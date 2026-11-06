@@ -100,8 +100,10 @@ export function classifyCommand(command: string): Verdict {
   // 子表达式 / 反引号：里面可以塞任何东西
   if (cmd.includes("$(") || cmd.includes("`")) return ASK("含子表达式，无法静态判断");
 
-  // 重定向：读命令也能写文件
-  if (/[<>]/.test(cmd)) return ASK("含重定向");
+  // 重定向：读命令也能写文件。
+  // 但 `> $null` 是把输出丢掉，不会写任何文件——这种不该问人。
+  const withoutNullSink = cmd.replace(/\d?>\s*\$null/gi, " ");
+  if (/[<>]/.test(withoutNullSink)) return ASK("含重定向");
 
   // 调用运算符 &（PowerShell 里可以执行任意程序）
   if (cmd.includes("&")) return ASK("含调用运算符");
