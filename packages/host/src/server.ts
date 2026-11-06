@@ -13,7 +13,7 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir, networkInterfaces } from "node:os";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
@@ -54,6 +54,11 @@ interface HistoryEntry {
   session_id: string;
   msg: unknown;
 }
+
+/** 权限档位：只读 / 工作区 / 完全 */
+export type Profile = "read-only" | "workspace" | "full";
+
+const PROFILES: Profile[] = ["read-only", "workspace", "full"];
 
 /** 「本轮产出」的结构化形状；前端产出区直接消费它，不再解析 notice 文案 */
 export interface ArtifactsPayload {
@@ -101,6 +106,10 @@ export interface HostOptions {
    * 测试指到临时目录：host 的用例不该往用户真实流水里写东西。
    */
   historyFile?: string;
+  /** 权限档位文件，默认 ~/.vance/profile.json；重启后保留 */
+  profileFile?: string;
+  /** 默认权限档位，默认 workspace */
+  defaultProfile?: Profile;
   /** 监听地址，默认 0.0.0.0（局域网可访问） */
   hostname?: string;
   /** 项目名，展示用 */
@@ -177,6 +186,10 @@ export class HostServer {
   /** 会话流水落盘，重启后还能接上 */
   private readonly historyFile: string;
 
+  /** 权限档位；只影响"要不要问"，不影响硬禁止 */
+  private profile: Profile;
+  private readonly profileFile: string;
+
   /** 构建产物目录的绝对路径；没配就是 null（只有测试台，没有真前端） */
   private readonly webDir: string | null;
 
@@ -184,7 +197,42 @@ export class HostServer {
     this.tokens = new Set([options.token]);
     this.webDir = options.webDir ? resolve(options.webDir) : null;
     this.historyFile = options.historyFile ?? join(homedir(), ".vance", "history.jsonl");
+    this.profileFile = options.profileFile ?? join(homedir(), ".vance", "profile.json");
+    this.profile = this.loadProfile() ?? options.defaultProfile ?? "workspace";
     this.loadHistory();
+  }
+
+  private loadProfile(): Profile | null {
+    try {
+      if (!existsSync(this.profileFile)) return null;
+      const raw = JSON.parse(readFileSync(this.profileFile, "utf8")) as { profile?: unknown };
+      return PROFILES.includes(raw.profile as Profile) ? (raw.profile as Profile) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private saveProfile(): void {
+    try {
+      mkdirSync(dirname(this.profileFile), { recursive: true });
+      writeFileSync(this.profileFile, JSON.stringify({ profile: this.profile }) + "\n");
+    } catch {}
+  }
+
+  /** 当前权限档位（host-demo 判定时读它） */
+  get currentProfile(): Profile {
+    return this.profile;
+  }
+
+  /** 只有人能提档；档位变更进流水并广播 */
+  setProfile(profile: Profile, by = "host"): boolean {
+    if (!PROFILES.includes(profile)) return false;
+    if (profile === this.profile) return true;
+    const from = this.profile;
+    this.profile = profile;
+    this.saveProfile();
+    this.emit({ type: "profile", profile, from, by, at: Date.now() });
+    return true;
   }
 
   private loadHistory(): void {
@@ -443,8 +491,11 @@ export class HostServer {
     this.sendFile(req, res, target, inAssets ? "public, max-age=31536000, immutable" : "no-cache");
   }
 
-  private sendFile(req: IncomingMessage, res: ServerResponse, path: string, cacheControl: string): void {
-    let body: Buffer;
+  private authorized(req: IncomingMessage): boolean {
+    return this.tokens.has(String(req.headers["x-vance-token"] ?? ""));
+  }
+
+  private sendFile(req: IncomingMessage, res: ServerResponse, path: string, cacheControl: string): void {    let body: Buffer;
     try {
       body = readFileSync(path);
     } catch {
@@ -474,9 +525,48 @@ export class HostServer {
         return;
       }
 
+      // 权限档位：GET 查询 / POST 切换。必须带 token——它会放宽或收紧审批。
+      if (url.pathname === "/profile") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method === "GET" || req.method === "HEAD") {
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          res.end(req.method === "HEAD" ? undefined : JSON.stringify({ profile: this.profile }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "GET, HEAD, POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 16_000) req.destroy();
+        });
+        req.on("end", () => {
+          let profile = "";
+          try {
+            profile = String((JSON.parse(raw) as { profile?: unknown })?.profile ?? "");
+          } catch {
+            /* 坏 body 按未知档位处理 */
+          }
+          const ok = this.setProfile(profile as Profile, "phone");
+          res.writeHead(ok ? 200 : 400, {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "no-store",
+          });
+          res.end(JSON.stringify({ ok, profile: this.profile }));
+        });
+        return;
+      }
+
       // 只读会话列表：手机刷新 / 重开之后靠它知道"还有哪些事摆着"
-      if (url.pathname === "/sessions") {
-        if (req.method !== "GET" && req.method !== "HEAD") {
+      if (url.pathname === "/sessions") {        if (req.method !== "GET" && req.method !== "HEAD") {
           res.writeHead(405, { allow: "GET, HEAD" });
           res.end("method not allowed");
           return;
@@ -666,6 +756,7 @@ export class HostServer {
         session_id: view,
         // 手机倒计时需要跟服务端同一个时钟；缺了它只能信手机本地时间
         server_time: Date.now(),
+        profile: this.profile,
       }),
     );
 

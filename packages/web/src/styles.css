@@ -947,3 +947,32 @@ button:disabled {
 }
 
 .card-error { margin-top: 6px; color: #fca5a5; font-size: 12px; }
+
+/* 权限档位 */
+.profile-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px 10px;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  background: #0f172a;
+  text-align: left;
+}
+.profile-row.current {
+  border-color: #2563eb;
+  background: #0b1a33;
+}
+.profile-name {
+  color: #e2e8f0;
+  font-size: 14px;
+}
+.profile-desc {
+  color: #64748b;
+  font-size: 11px;
+}
+.chip.prof-read-only { color: #94a3b8; }
+.chip.prof-workspace { color: #93c5fd; border-color: #1e3a8a; }
+.chip.prof-full { color: #fca5a5; border-color: #7f1d1d; }

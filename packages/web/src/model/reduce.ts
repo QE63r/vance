@@ -16,6 +16,7 @@ import type {
   ArtifactsPayload,
   Decision,
   DeviceRequest,
+  Profile,
   ServerMsg,
   Step,
 } from "./types";
@@ -54,6 +55,8 @@ export interface State {
   task: string;
   /** 当前正在看哪条会话；hello / session 都会更新它 */
   sessionId: string;
+  /** 权限档位；hello / profile 都会更新它 */
+  profile: Profile;
   lastEventAt: number | null;
   replaying: boolean;
   seq: number;
@@ -68,6 +71,7 @@ export const initialState: State = {
   project: "",
   task: "",
   sessionId: "",
+  profile: "workspace",
   lastEventAt: null,
   replaying: false,
   seq: 0,
@@ -183,6 +187,7 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         project: msg.project || s.project,
         task: msg.task ?? s.task,
         sessionId: msg.session_id ?? s.sessionId,
+        profile: msg.profile ?? s.profile,
         link: { phase: "ready", attempts: 0 },
         device: { ...s.device, phase: "trusted", name: msg.device || s.device.name },
         // 还没见过任何一轮 = 空会话，等同于空闲；否则第一条消息永远发不出去
@@ -280,6 +285,9 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
     // 会话就绪/切换：换的是"正在看哪条"，不碰时间线（history 会来重建）
     case "session":
       return { ...s, sessionId: msg.session_id };
+
+    case "profile":
+      return { ...s, profile: msg.profile };
 
     default:
       // 服务端以后加新消息类型时，老页面应该忽略，而不是把 state 变成 undefined 白屏

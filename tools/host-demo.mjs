@@ -10,7 +10,7 @@ import QRCode from "qrcode";
 import { AcpClient, explainAction } from "../packages/adapter-opencode/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
@@ -18,6 +18,8 @@ const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
 const WEB_DIR = process.env.VANCE_WEB_DIR ?? join(HERE, "..", "packages", "web", "dist");
 
 const CWD = process.argv[2] ?? "C:\\Users\\1\\Desktop\\梵境\\sandbox";
+// 工作区档位自动放行的根目录：任务沙盒、桌面、Agent 写脚本的临时目录
+const WORKSPACE_ROOTS = [...new Set([CWD, join(homedir(), "Desktop"), join(tmpdir(), "opencode")])];
 const PROMPT = process.env.VANCE_PROMPT ?? process.argv[3] ?? "把 data.csv 删掉";
 const PORT = Number(process.env.PORT ?? 8787);
 const USE_TUNNEL = process.argv.includes("--tunnel");
@@ -437,7 +439,11 @@ const client = new AcpClient(
       }
 
       // 判定顺序：禁止 → 记住 → 本轮授权 → 只读 → 问人
-      const verdict = classifyApproval(event, remembered);
+      const verdict = classifyApproval(event, {
+        remembered,
+        profile: host.currentProfile,
+        workspaceRoots: WORKSPACE_ROOTS,
+      });
       const gk = grantKey(event);
       const granted = turnGrants.has(gk);
 

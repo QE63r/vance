@@ -128,6 +128,16 @@ function programOf(text: string): string {
   return head.split(/[\\/]/).pop() ?? "";
 }
 
+/** 如果要跑的是一个脚本文件，把路径作为事实；这是"工作区内脚本"判断的依据 */
+export function extractScript(text: string): string {
+  const quoted = text.match(/-File\s+"([^"]+\.(?:ps1|cmd|bat|sh))"/i);
+  if (quoted?.[1]) return quoted[1];
+  const bare = text.match(/-File\s+([^\s]+\.(?:ps1|cmd|bat|sh))/i);
+  if (bare?.[1]) return bare[1];
+  const first = text.trim().replace(/^&\s*/, "").match(/^"?([^\s"]+\.(?:ps1|cmd|bat|sh))"?/i);
+  return first?.[1] ?? "";
+}
+
 /**
  * 翻译一行 ACP 消息。
  *
@@ -185,6 +195,7 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
             : "unknown";
     const danger = dangerOf(text);
     const program = kind === "execute" ? programOf(text) : "";
+    const script = kind === "execute" ? extractScript(text) : "";
     const writePath = kind === "edit" ? asString(toolCall.rawInput?.filepath, locationsList[0] ?? "") : "";
 
     const candidate = {
@@ -199,6 +210,7 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
         files: kind === "edit" ? asString(toolCall.rawInput?.filepath, title) : extractPaths(title),
         effect,
         ...(program ? { program } : {}),
+        ...(script ? { script } : {}),
         ...(kind === "edit" && writePath ? { writes: [writePath] } : {}),
         ...((kind === "read" || kind === "other") && locationsList.length ? { reads: locationsList } : {}),
         ...(danger ? { danger } : {}),

@@ -7,6 +7,13 @@ const RETRY_MS = [800, 1600, 3200, 8000];
 let socket: WebSocket | null = null;
 let retryTimer: number | null = null;
 
+let currentToken = "";
+
+/** 给 HTTP 接口用（/profile 等）：token 只放请求头，不进 URL */
+export function getToken(): string {
+  return currentToken;
+}
+
 /** token 只从前端拿：地址 hash → 查询串 → sessionStorage → dev 默认值 */
 function readToken(): string {
   const fromHash = new URLSearchParams(location.hash.replace(/^#/, "")).get("token");
@@ -67,6 +74,7 @@ export function boot(): void {
   // 先读会话再读 token：readToken 会立刻清掉整个查询串
   const session = readSession();
   const token = readToken();
+  currentToken = token;
 
   const connect = (): void => {
     store.dispatch({ type: "connect" });

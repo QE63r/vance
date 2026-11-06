@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { store, useVance } from "../model/store";
 import { pendingCount, canSend, canStop, hintText, linkText, execText, deviceText, linkReady, latestArtifacts } from "../model/selectors";
-import { send } from "../net/ws";
+import { send, getToken } from "../net/ws";
+import type { Profile } from "../model/types";
 import { Timeline } from "../ui/Timeline";
 import { Composer } from "../ui/Composer";
 import { ScreenMini } from "../ui/ScreenMini";
-import { ArtifactsSheet, DeviceSheet, MenuSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
+import { ArtifactsSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
 
 export function App() {
   const s = useVance();
   const [now, setNow] = useState(() => Date.now());
-  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules">(null);
+  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules" | "profile">(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [rules, setRules] = useState<string[]>([]);
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -77,6 +78,21 @@ export function App() {
     setSheet(null);
   };
 
+  const pickProfile = async (profile: Profile) => {
+    try {
+      const res = await fetch("/profile", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vance-token": getToken() },
+        body: JSON.stringify({ profile }),
+      });
+      if (res.ok) setSheet(null);
+    } catch {
+      /* 网络失败就留在面板里，重试 */
+    }
+  };
+
+  const PROFILE_TEXT: Record<Profile, string> = { "read-only": "只读", workspace: "工作区", full: "完全" };
+
   return (
     <div className="app">
       <header className={`hdr link-${s.link.phase}`}>
@@ -97,6 +113,7 @@ export function App() {
           <span className={`chip exec-${s.exec.phase}`}>{execText(s)}</span>
           <span className={`chip appr-${pending > 0 ? "on" : "off"}`}>{pending > 0 ? `待批 ${pending}` : "无待批"}</span>
           <span className={`chip dev-${s.device.phase}`}>{deviceText(s)}</span>
+          <span className={`chip prof-${s.profile}`}>权限：{PROFILE_TEXT[s.profile]}</span>
         </div>
       </header>
 
@@ -135,11 +152,21 @@ export function App() {
       <ScreenMini ready={linkReady(s)} />
 
       {sheet === "artifacts" && result && <ArtifactsSheet data={result} onClose={() => setSheet(null)} />}
-      {sheet === "menu" && <MenuSheet onSessions={openSessions} onRules={openRules} onClose={() => setSheet(null)} />}
+      {sheet === "menu" && (
+        <MenuSheet
+          onSessions={openSessions}
+          onRules={openRules}
+          onProfile={() => setSheet("profile")}
+          onClose={() => setSheet(null)}
+        />
+      )}
       {sheet === "sessions" && (
         <SessionsSheet sessions={sessions} currentId={s.sessionId} onPick={pickSession} onClose={() => setSheet(null)} />
       )}
       {sheet === "rules" && <RulesSheet rules={rules} onRevoke={revokeRule} onClose={() => setSheet(null)} />}
+      {sheet === "profile" && (
+        <ProfileSheet profile={s.profile} onPick={pickProfile} onClose={() => setSheet(null)} />
+      )}
       {s.device.incoming.length > 0 && (
         <DeviceSheet
           request={s.device.incoming[0]}
