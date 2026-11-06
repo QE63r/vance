@@ -11,12 +11,30 @@
  *    端到端加密在 P5，别把这个拿去做公网部署。
  */
 
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { homedir, networkInterfaces } from "node:os";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
+
+/** 前端构建产物会出现的类型；其余按二进制发，别猜 */
+const MIME: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
 
 export type Decision = "allow" | "reject" | "remember";
 
@@ -29,6 +47,13 @@ export interface HostOptions {
   token: string;
   /** 审批页 HTML 的路径 */
   pagePath: string;
+  /**
+   * 前端构建产物目录（Vite 的 `packages/web/dist`）。
+   *
+   * 目录由调用方决定，这里不写死：干净检出时 dist 被 .gitignore 忽略、并不存在，
+   * 缺了它只该是 /app/ 404，而不是起不来。
+   */
+  webDir?: string;
   /** 监听地址，默认 0.0.0.0（局域网可访问） */
   hostname?: string;
   /** 项目名，展示用 */
@@ -92,8 +117,12 @@ export class HostServer {
   /** 会话流水落盘，重启后还能接上 */
   private readonly historyFile = join(homedir(), ".vance", "history.jsonl");
 
+  /** 构建产物目录的绝对路径；没配就是 null（只有测试台，没有真前端） */
+  private readonly webDir: string | null;
+
   constructor(private readonly options: HostOptions) {
     this.tokens = new Set([options.token]);
+    this.webDir = options.webDir ? resolve(options.webDir) : null;
     this.loadHistory();
   }
 
@@ -182,21 +211,106 @@ export class HostServer {
     return this.clients.size;
   }
 
+  /**
+   * /app/* 静态托管：把 Vite 的构建产物发给手机。
+   *
+   * 三条规则（顺序固定）：
+   *   /app/assets/*        带内容哈希 → 一年不可变缓存
+   *   /app、无扩展名的路由   → index.html（no-store，路由由前端自己处理）
+   *   带扩展名但文件不存在    → 404
+   *
+   * 最后一条必须守住：把 404 也回成 index.html，浏览器会把 HTML 当 JS 执行，
+   * 控制台只报一句语法错误、页面白屏——比明确 404 难查得多。
+   */
+  private serveWeb(req: IncomingMessage, res: ServerResponse, pathname: string): void {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      res.writeHead(405, { allow: "GET, HEAD", "content-type": "text/plain; charset=utf-8" });
+      res.end("method not allowed");
+      return;
+    }
+
+    const notFound = (why: string): void => {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+      res.end(`not found: ${why}`);
+    };
+
+    if (!this.webDir) return notFound("web build not configured");
+
+    // 先解码再拼路径：%2e%2e 这类转义只有解完才看得见
+    let rel: string;
+    try {
+      rel = decodeURIComponent(pathname.slice("/app".length)).replace(/^\/+/, "");
+    } catch {
+      res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+      res.end("bad path");
+      return;
+    }
+
+    const webDir = this.webDir;
+    const inside = (p: string): boolean =>
+      p === webDir || p.startsWith(webDir.endsWith(sep) ? webDir : webDir + sep);
+    const isFile = (p: string): boolean => {
+      try {
+        return statSync(p).isFile();
+      } catch {
+        return false;
+      }
+    };
+
+    const inAssets = rel.startsWith("assets/");
+    const wantsIndex = rel === "" || rel === "index.html" || extname(rel) === "";
+
+    if (wantsIndex && !inAssets) {
+      const index = join(webDir, "index.html");
+      if (!inside(index) || !isFile(index)) return notFound("index.html");
+      this.sendFile(req, res, index, "no-store");
+      return;
+    }
+
+    const target = resolve(webDir, rel);
+    if (!inside(target) || !isFile(target)) return notFound(rel);
+    this.sendFile(req, res, target, inAssets ? "public, max-age=31536000, immutable" : "no-cache");
+  }
+
+  private sendFile(req: IncomingMessage, res: ServerResponse, path: string, cacheControl: string): void {
+    let body: Buffer;
+    try {
+      body = readFileSync(path);
+    } catch {
+      res.writeHead(404, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+      res.end("not found");
+      return;
+    }
+    res.writeHead(200, {
+      "content-type": MIME[extname(path).toLowerCase()] ?? "application/octet-stream",
+      "content-length": String(body.length),
+      "cache-control": cacheControl,
+    });
+    res.end(req.method === "HEAD" ? undefined : body);
+  }
+
   start(): Promise<{ port: number; urls: string[] }> {
     const hostname = this.options.hostname ?? "0.0.0.0";
 
     const http = createServer((req, res) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+
+      // 顺序固定：/health → /app/assets/* → /app fallback → 其余 404。
+      // /ws 走 upgrade 事件，不经过这条链。
+      if (url.pathname === "/health") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ok: true, devices: this.deviceCount }));
+        return;
+      }
+      if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
+        this.serveWeb(req, res, url.pathname);
+        return;
+      }
       if (url.pathname === "/") {
         console.log(`[host] 页面请求来自 ${req.socket.remoteAddress}`);
         // 每次请求都读文件：改页面不用重启服务，正在用的人刷新一下就是新的
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
         res.end(readFileSync(this.options.pagePath, "utf8"));
-        return;
-      }
-      if (url.pathname === "/health") {
-        res.writeHead(200, { "content-type": "application/json" });
-        res.end(JSON.stringify({ ok: true, devices: this.deviceCount }));
         return;
       }
       res.writeHead(404);

@@ -14,6 +14,8 @@ import { homedir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
+// 真前端的构建产物：默认用仓库里的 packages/web/dist，可用 VANCE_WEB_DIR 指到别处
+const WEB_DIR = process.env.VANCE_WEB_DIR ?? join(HERE, "..", "packages", "web", "dist");
 
 const CWD = process.argv[2] ?? "C:\\Users\\1\\Desktop\\梵境\\sandbox";
 const PROMPT = process.env.VANCE_PROMPT ?? process.argv[3] ?? "把 data.csv 删掉";
@@ -165,6 +167,7 @@ const host = new HostServer({
   port: PORT,
   token,
   pagePath: PAGE,
+  webDir: WEB_DIR,
   projectName: "sandbox",
 });
 
@@ -251,7 +254,7 @@ const real =
   entries.find((e) => /Wi-?Fi|WLAN|以太网|Ethernet/i.test(e.iface) && !/vEthernet|Loopback/i.test(e.iface)) ??
   entries[0];
 
-const url = `${real ? real.url : `http://127.0.0.1:${port}`}/?token=${token}`;
+const url = `${real ? real.url : `http://127.0.0.1:${port}`}/app/?token=${token}`;
 
 console.log("");
 console.log("  梵境 · 等待手机连接");
@@ -283,7 +286,7 @@ if (USE_TUNNEL) {
     const out = execSync("tailscale funnel status", { encoding: "utf8", timeout: 5000 });
     const m = out.match(/https:\/\/[a-z0-9-]+\.ts\.net\/?/i);
     if (m) {
-      const publicUrl = `${m[0].replace(/\/$/, "")}/?token=${token}`;
+      const publicUrl = `${m[0].replace(/\/$/, "")}/app/?token=${token}`;
       console.log("");
       console.log("  ── 公网地址（Tailscale Funnel，永久固定）──────");
       qrcode.generate(publicUrl, { small: true });
@@ -313,7 +316,7 @@ if (USE_TUNNEL) {
     const cf = spawn(exe, ["tunnel", "run", "--url", `http://127.0.0.1:${port}`, named.name], {
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const publicUrl = `https://${named.host}/?token=${token}`;
+    const publicUrl = `https://${named.host}/app/?token=${token}`;
     console.log("");
     console.log("  ── 公网地址（固定，重启也不变）────────────");
     qrcode.generate(publicUrl, { small: true });
@@ -344,7 +347,7 @@ if (USE_TUNNEL) {
     const m = seen.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
     if (m && !printed) {
       printed = true;
-      const publicUrl = `${m[0]}/?token=${token}`;
+      const publicUrl = `${m[0]}/app/?token=${token}`;
       // 写文件：Node 的 stdout 接管道时是块缓冲，日志可能迟迟不刷出来
       try {
         writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);

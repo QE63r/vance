@@ -397,7 +397,7 @@ packages/web/
   test/          fixtures + reducer 快照
 ```
 
-- 构建产物落到 `packages/host/public/app/`，host 负责 `/app/*` 静态与 SPA fallback（**要改 host**）。
+- 构建产物在 `packages/web/dist`（Vite 默认）；host 用 `webDir` 托管 `/app/*` 并做 SPA fallback（见 ADR-0007）。
 - 开发：`vite` 起 5173，`server.proxy` 把 `/ws` 转给 8787。token 在前端读，不走代理配置。
 - 生产：一次 `pnpm --filter @vance/web build`，`v` 照旧只起一个端口。
 - 测试台 `public/index.html` 保留为诊断页，不再加功能。

@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -6,11 +9,32 @@ import { HostServer, type Decision } from "../src/index.js";
 const PAGE = fileURLToPath(new URL("../public/index.html", import.meta.url));
 
 let server: HostServer | null = null;
+const tempDirs: string[] = [];
 
 afterEach(async () => {
   await server?.close();
   server = null;
+  while (tempDirs.length > 0) rmSync(tempDirs.pop()!, { recursive: true, force: true });
 });
+
+/**
+ * 造一个假的前端构建产物。
+ *
+ * 为什么不直接用 packages/web/dist：dist/ 在 .gitignore 里，干净检出时不存在，
+ * 而且 @vance/host 的测试只依赖上游 build、不构建 web。测试不该靠"先手动 build"。
+ */
+function webFixture(): string {
+  const dir = mkdtempSync(join(tmpdir(), "vance-web-"));
+  tempDirs.push(dir);
+  mkdirSync(join(dir, "assets"), { recursive: true });
+  writeFileSync(
+    join(dir, "index.html"),
+    '<!doctype html><html><body><div id="root">SESSION-VIEW</div></body></html>',
+  );
+  writeFileSync(join(dir, "assets", "app-abc123.js"), "console.log('session view')");
+  writeFileSync(join(dir, "favicon.ico"), Buffer.from([0, 0, 1, 0]));
+  return dir;
+}
 
 /** 连上并把收到的消息收进数组，直到满足条件或超时 */
 function listen(
@@ -182,5 +206,74 @@ describe("HostServer", () => {
     });
     expect(code).toBe(4004);
   });
+});
 
+describe("host 静态托管 /app", () => {
+  it("/app/ 回的是构建出的 index.html（no-store），不是测试台页面", async () => {
+    const webDir = webFixture();
+    server = new HostServer({ port: 0, token: "s1", pagePath: PAGE, webDir, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/app/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.text()).toContain("SESSION-VIEW");
+  });
+
+  it("/app/assets/* 带内容哈希，给一年 immutable 缓存和正确的 content-type", async () => {
+    const webDir = webFixture();
+    server = new HostServer({ port: 0, token: "s2", pagePath: PAGE, webDir, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/app/assets/app-abc123.js`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/javascript");
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    expect(await res.text()).toContain("session view");
+  });
+
+  it("无扩展名的 /app 路由回落到 index.html（/app 本身也算）", async () => {
+    const webDir = webFixture();
+    server = new HostServer({ port: 0, token: "s3", pagePath: PAGE, webDir, approveAllDevices: true });
+    const { port } = await server.start();
+
+    for (const path of ["/app", "/app/", "/app/settings"]) {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("cache-control"), path).toBe("no-store");
+      expect(await res.text(), path).toContain("SESSION-VIEW");
+    }
+  });
+
+  it("带扩展名但文件不存在时是 404，不把 index.html 当救兵", async () => {
+    const webDir = webFixture();
+    server = new HostServer({ port: 0, token: "s4", pagePath: PAGE, webDir, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/app/nope.js`);
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toContain("text/plain");
+    expect(await res.text()).not.toContain("SESSION-VIEW");
+  });
+
+  it("非 assets 的静态文件给 no-cache，仍按扩展名发类型", async () => {
+    const webDir = webFixture();
+    server = new HostServer({ port: 0, token: "s5", pagePath: PAGE, webDir, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/app/favicon.ico`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    expect(res.headers.get("content-type")).toBe("image/x-icon");
+    expect(res.headers.get("content-length")).toBe("4");
+  });
+
+  it("没有配置 webDir 时 /app/ 是 404，而不是 500 或崩溃", async () => {
+    server = new HostServer({ port: 0, token: "s6", pagePath: PAGE, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/app/`);
+    expect(res.status).toBe(404);
+  });
 });
