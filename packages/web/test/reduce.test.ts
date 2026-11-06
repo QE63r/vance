@@ -120,6 +120,18 @@ describe("四轴互不覆盖", () => {
   });
 });
 
+describe("审批提交超时", () => {
+  it("提交后没等到回执，退回可操作并提示重试", () => {
+    let s = run([{ type: "event", event: approval }]);
+    s = reduce(s, { type: "decide", requestId: approval.request_id, decision: "allow" });
+    expect(s.approvals[approval.request_id].phase).toBe("submitting");
+
+    s = reduce(s, { type: "decide-timeout", requestId: approval.request_id });
+    expect(s.approvals[approval.request_id].phase).toBe("offered");
+    expect(s.approvals[approval.request_id].error).toBeTruthy();
+  });
+});
+
 describe("空会话", () => {
   it("连上但还没有任何一轮时，执行轴是空闲，第一条消息能发", () => {
     let s = reduce(initialState, { type: "connect" });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ApprovalEntry } from "../model/reduce";
 import { approvalRemaining } from "../model/selectors";
 import { store } from "../model/store";
@@ -25,6 +25,15 @@ export function ApprovalCard({ entry, now, linkReady }: { entry: ApprovalEntry; 
     if (sent) store.dispatch({ type: "decide", requestId: ev.request_id, decision: remember ? "remember" : decision });
   };
 
+  // 提交后 8 秒没有回执就退回可操作，不能让卡片永远转圈
+  useEffect(() => {
+    if (entry.phase !== "submitting") return;
+    const timer = window.setTimeout(() => {
+      store.dispatch({ type: "decide-timeout", requestId: ev.request_id });
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [entry.phase, ev.request_id]);
+
   return (
     <div className={`card approval phase-${entry.phase}`}>
       <div className="card-kicker">
@@ -34,6 +43,8 @@ export function ApprovalCard({ entry, now, linkReady }: { entry: ApprovalEntry; 
         {entry.phase === "expired" && <>已过期</>}
         {entry.phase === "stale" && <>已失效 · 超时或另一台设备已处理</>}
       </div>
+
+      {entry.error && <div className="card-error">{entry.error}</div>}
 
       <div className="card-action">{ev.action_display || "(无动作)"}</div>
 

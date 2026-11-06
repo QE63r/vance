@@ -137,6 +137,24 @@ export function SessionsSheet({
   );
 }
 
+const RULE_KIND: Record<string, string> = {
+  execute: "运行命令",
+  edit: "改文件",
+  read: "读取",
+  fetch: "联网",
+  unknown: "操作",
+};
+
+/** 规则 key 是 `kind:动作`；给手机看时换成"运行命令：…"，太长的截断 */
+function prettyRule(key: string): string {
+  const i = key.indexOf(":");
+  if (i <= 0) return key.length > 60 ? `${key.slice(0, 60)}…` : key;
+  const kind = key.slice(0, i);
+  const rest = key.slice(i + 1).trim().replace(/\s+/g, " ");
+  const short = rest.length > 46 ? `${rest.slice(0, 46)}…` : rest;
+  return `${RULE_KIND[kind] ?? kind}：${short}`;
+}
+
 export function RulesSheet({
   rules,
   onRevoke,
@@ -152,7 +170,7 @@ export function RulesSheet({
       {rules.map((key) => (
         <div className="rule-row" key={key}>
           <span className="rule-text" title={key}>
-            {key}
+            {prettyRule(key)}
           </span>
           <button className="btn deny" type="button" onClick={() => onRevoke(key)}>
             撤销

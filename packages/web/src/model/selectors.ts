@@ -74,11 +74,11 @@ export function execText(s: State): string {
 export function deviceText(s: State): string {
   switch (s.device.phase) {
     case "trusted":
-      return "设备可信";
+      return "已配对";
     case "pending":
-      return "等待接入";
+      return "等待允许";
     case "denied":
-      return "已拒绝";
+      return "配对被拒";
     case "unknown":
       return "未识别";
   }
