@@ -375,8 +375,16 @@ if (USE_TUNNEL) {
   }
 }
 
+// 上次的会话 id：读到就试着接上，接不上自动开新的
+const SESSION_FILE = join(homedir(), ".vance", "session.json");
+let resumeId = "";
+try {
+  const saved = JSON.parse(readFileSync(SESSION_FILE, "utf8"));
+  if (saved?.id) resumeId = String(saved.id);
+} catch {}
+
 const client = new AcpClient(
-  { cwd: CWD, projectId: "sandbox" },
+  { cwd: CWD, projectId: "sandbox", resumeId },
   {
     onChat: (messageId, text) => host.broadcastChat(messageId, text),
     onStep: (event) => {
@@ -449,6 +457,10 @@ const client = new AcpClient(
 );
 
 const sessionId = await client.start();
+try {
+  mkdirSync(dirname(SESSION_FILE), { recursive: true });
+  writeFileSync(SESSION_FILE, JSON.stringify({ id: sessionId, at: Date.now() }));
+} catch {}
 console.log("  session: " + sessionId);
 console.log("");
 
