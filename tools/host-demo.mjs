@@ -8,7 +8,7 @@ import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
 import QRCode from "qrcode";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
-import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
+import { classifyApproval, treatKey, explainAction } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 
@@ -295,6 +295,10 @@ const client = new AcpClient(
         reply("allow");
         return;
       }
+
+      // 卡片上只有命令，人判断不了后果；先单独说一句人话
+      const note = explainAction(String(event.action_display ?? ""));
+      if (note) host.broadcastNotice("deny", "⚠ " + note);
 
       pending.set(event.request_id, { reply, key: treatKey(event) });
       host.broadcast(event);
