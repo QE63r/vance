@@ -65,12 +65,20 @@ describe("HostServer", () => {
     // 先广播——此时没有任何设备在线
     server.broadcast(approval);
 
-    // 后连上的手机应当收到 hello + 一条 history，里面带着那条审批
-    const msgs = await listen(port, "t2", 2);
+    // 后连上的手机：hello → （可能有 history）→ 待办审批以独立事件补发
+    const msgs = await listen(port, "t2", 3);
     expect(msgs[0].type).toBe("hello");
-    expect(msgs[1].type).toBe("history");
-    const items = msgs[1].items ?? [];
-    expect(items.some((m: any) => m.type === "event" && m.event.request_id === "call_1")).toBe(true);
+
+    // 历史里不允许再出现审批请求：它们早就作废，重放会像「现在要你批」
+    const historyMsg = msgs.find((m: any) => m.type === "history");
+    const items = historyMsg?.items ?? [];
+    expect(
+      items.some((m: any) => m.type === "event" && m.event?.type === "approval_request"),
+    ).toBe(false);
+
+    // 真正还在等决定的那条，以独立事件补发
+    const pendingEvent = msgs.find((m: any) => m.type === "event" && m.event?.request_id === "call_1");
+    expect(pendingEvent).toBeTruthy();
   });
 
   it("口令不对直接断开", async () => {
