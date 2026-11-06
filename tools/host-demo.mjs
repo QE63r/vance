@@ -38,6 +38,7 @@ const token = (() => {
 
 /** 等待人决定的请求：request_id → 回给 Agent 的函数 */
 const pending = new Map();
+const repeatCount = new Map(); // 同一条动作被要求的次数（防死循环）
 const RULES = join(homedir(), ".vance", "rules.json");
 const remembered = (() => {
   try { return JSON.parse(readFileSync(RULES, "utf8")).allow ?? []; } catch { return []; }
@@ -210,6 +211,18 @@ const client = new AcpClient(
       console.log(`  ${mark} ${event.step?.title}`);
     },
     onApproval: (event, reply) => {
+      // 同一条动作第三次找上门，说明它卡在循环里了。
+      // 再让人点十次批准，是把 Agent 的毛病转嫁给用户。
+      const actionKey = String(event.action_display ?? "");
+      const times = (repeatCount.get(actionKey) ?? 0) + 1;
+      repeatCount.set(actionKey, times);
+      if (times >= 3) {
+        console.log(`  ⛔ 第 ${times} 次要求同一条命令，自动拒绝`);
+        host.broadcastNotice("deny", `它已经第 ${times} 次要求同一条命令，自动拒绝；建议换个说法或直接接管`);
+        reply("reject");
+        return;
+      }
+
       // 判定顺序：禁止 → 记住 → 只读 → 问人
       const verdict = classifyApproval(event, remembered);
 
@@ -261,10 +274,10 @@ host.onPrompt(async (text) => {
   try {
     const watchdog = setTimeout(() => {
       console.log("  \u26a0 120 秒无进展，判定为卡住");
-      host.broadcastNotice("deny", "这一步超过 120 秒没有进展，已放开输入");
+      host.broadcastNotice("deny", "这一步超过 180 秒没有进展，已放开输入");
       host.broadcastTurn("stopped");
       running = false;
-    }, 120_000);
+    }, 180_000);
     const r = await client.runTurn(text).finally(() => clearTimeout(watchdog));
     console.log("  本轮结束：" + r);
   } catch (err) {
