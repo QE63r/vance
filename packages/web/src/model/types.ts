@@ -81,8 +81,8 @@ export interface DeviceRequest {
 
 /** host → 手机 */
 export type ServerMsg =
-  | { type: "hello"; project: string; task?: string; device: string }
-  | { type: "history"; items: ServerMsg[] }
+  | { type: "hello"; project: string; task?: string; device: string; session_id?: string }
+  | { type: "history"; items: ServerMsg[]; session_id?: string }
   | { type: "event"; event: AgentEvent }
   | { type: "chat"; role: "agent"; messageId: string; text: string }
   | { type: "user"; text: string }
@@ -92,6 +92,7 @@ export type ServerMsg =
   | { type: "ack"; requestId: string; accepted: boolean }
   | { type: "decision"; requestId: string; decision: Decision; by: string; at: number }
   | { type: "artifacts"; artifacts: ArtifactsPayload }
+  | { type: "session"; session_id: string; title: string; active: boolean }
   | { type: "device_request"; deviceId: string; name: string; ip: string; at: number }
   | { type: "device_pending"; name: string }
   | { type: "device_approved" };

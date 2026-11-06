@@ -16,6 +16,7 @@ import { readFileSync } from "node:fs";
 import { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT ?? 8787);
+const SESSION = "mock-session";
 const FRAME = readFileSync(new URL("./frame.png", import.meta.url));
 const history = [];
 const pending = new Map();
@@ -46,9 +47,10 @@ function envelope() {
 }
 
 function emit(msg) {
-  history.push(msg);
+  const tagged = { ...msg, session_id: SESSION };
+  history.push(tagged);
   if (history.length > 400) history.splice(0, history.length - 400);
-  const data = JSON.stringify(msg);
+  const data = JSON.stringify(tagged);
   for (const c of clients) if (c.readyState === 1) c.send(data);
 }
 
@@ -152,12 +154,12 @@ function emitArtifacts(turnId, added, changed, removed, warnings) {
 function decide(socket, msg) {
   const event = pending.get(msg.requestId);
   if (!event) {
-    socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted: false }));
+    socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted: false, session_id: SESSION }));
     return;
   }
   pending.delete(msg.requestId);
   const decision = msg.decision === "remember" ? "remember" : msg.decision === "allow" ? "allow" : "reject";
-  socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted: true }));
+  socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted: true, session_id: SESSION }));
   emit({ type: "decision", requestId: msg.requestId, decision, by: "mock-phone", at: Date.now() });
 
   if (decision === "reject") {
@@ -184,10 +186,12 @@ function decide(socket, msg) {
 function attach(socket) {
   clients.add(socket);
   console.log(`[mock] 设备接入（共 ${clients.size} 台）`);
-  socket.send(JSON.stringify({ type: "hello", project: "sandbox", task: "", device: "mock-phone" }));
+  socket.send(
+    JSON.stringify({ type: "hello", project: "sandbox", task: "", device: "mock-phone", session_id: SESSION }),
+  );
   const past = history.filter((m) => !(m.type === "event" && m.event?.type === "approval_request"));
-  if (past.length > 0) socket.send(JSON.stringify({ type: "history", items: past }));
-  for (const event of pending.values()) socket.send(JSON.stringify({ type: "event", event }));
+  if (past.length > 0) socket.send(JSON.stringify({ type: "history", session_id: SESSION, items: past }));
+  for (const event of pending.values()) socket.send(JSON.stringify({ type: "event", event, session_id: SESSION }));
 
   socket.on("message", (raw) => {
     let msg;
@@ -205,8 +209,8 @@ function attach(socket) {
     if (msg.type === "decision") return decide(socket, msg);
     if (msg.type === "resync") {
       const items = history.filter((m) => !(m.type === "event" && m.event?.type === "approval_request"));
-      if (items.length) socket.send(JSON.stringify({ type: "history", items }));
-      for (const event of pending.values()) socket.send(JSON.stringify({ type: "event", event }));
+      if (items.length) socket.send(JSON.stringify({ type: "history", session_id: SESSION, items }));
+      for (const event of pending.values()) socket.send(JSON.stringify({ type: "event", event, session_id: SESSION }));
       return;
     }
     if (msg.type === "device_decision") {
