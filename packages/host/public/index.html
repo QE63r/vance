@@ -139,6 +139,11 @@
   .image-msg img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
   .image-msg .cap { font-size: 11px; color: var(--dim); margin-top: 4px; }
   .stop { background: var(--danger); }
+  #jump-bottom {
+    position: fixed; right: 16px; bottom: 168px; z-index: 5;
+    background: var(--accent); color: #fff; border-radius: 20px;
+    padding: 8px 14px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.45);
+  }
   .hint { max-width: 680px; margin: 6px auto 0; font-size: 11px; color: #55636f; text-align: center; }
 
   /* 实时画面小窗：默认缩在右下角，点一下放大 */
@@ -173,6 +178,8 @@
   <img id="screen-img" alt="电脑屏幕">
   <span class="badge">实时</span>
 </div>
+
+<button id="jump-bottom" hidden>↓ 最新</button>
 
 <div class="composer">
   <div class="row">
@@ -218,7 +225,16 @@
   /* ── 滚动：贴底时自动跟随，用户翻上去就不打扰 ── */
   window.addEventListener("scroll", () => {
     stickBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 140;
+    const jb = document.getElementById("jump-bottom");
+    if (jb) jb.hidden = stickBottom;
   }, { passive: true });
+
+  document.addEventListener("click", (e) => {
+    if (e.target && e.target.id === "jump-bottom") {
+      stickBottom = true;
+      window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+    }
+  });
 
   function toBottom(force) {
     if (!force && !stickBottom) return;
@@ -531,7 +547,7 @@
             }
           }
           replaying = false;
-          toBottom(true);
+          toBottom();   // 你翻上去看旧消息时，别把你拽回来
           break;
         case "hello":
           projectEl.textContent = msg.project || "";

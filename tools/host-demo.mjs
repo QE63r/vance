@@ -146,7 +146,7 @@ function reportArtifacts(before, after) {
   inspectArtifacts([...added, ...changed]);
   const total = added.length + changed.length + removed.length;
   if (total === 0) {
-    host.broadcastNotice("deny", "本轮没有任何文件变化——它说的和它做的，对不上");
+    host.broadcastNotice("auto", "本轮没有产生文件变化（只是回答，没有动文件）");
     console.log("  📦 产出：无变化");
     return;
   }
