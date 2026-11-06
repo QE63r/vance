@@ -103,9 +103,9 @@
 
 ## 6. 下一步（已定）
 
-**第一屏（会话视图）+ 接真 host + 会话身份都已完成。**
+**第一屏（会话视图）+ 接真 host + 会话身份 + 审计与产出都已完成。**
 取舍见 `adr/0006-frontend-first-screen.md`、`adr/0007-host-static-hosting.md`、
-`adr/0008-session-identity.md`。
+`adr/0008-session-identity.md`、`adr/0009-audit-and-artifacts.md`。
 
 做完了什么：
 
@@ -117,21 +117,23 @@
   `vite build` 的 base 是 `/app/`，dev 仍是 5173 根路径；手机地址改为 `/app/?token=…`
 - ~~会话身份~~：消息带 `session_id`、`history` 按会话分桶、`GET /sessions`、
   `WS ?session=` 回放；旧流水归 `legacy`（只读）；未知 id 给解释不静默切换
-- 测试基线从 100 → 106 → **112 passed**（host 19 条，含 6 条会话身份用例）
+- ~~审计与产出~~：`decision` 广播并落流水（谁、何时、批/拒）、`artifacts` 结构化
+  （added / changed / removed / warnings）、`GET /rules` + 撤销、`hello.server_time`
+- 测试基线从 100 → 106 → 112 → **116 passed**（host 23 条）
 
 下一步按这个顺序：
 
 1. ~~接真 host~~（已完成，卡见 `docs/task-host-static.md`）
-2. 后端 P0（拆两张）：~~卡 1 会话身份~~（已完成，卡见 `docs/task-session-id.md`）→
-   卡 2 审计与产出（`artifacts` / `decision` / `rules`，未落文件）
-3. 再补列表屏 / 设置屏 / 会话切换（设计稿 §2.2、§2.4、§3.5）
+2. ~~后端 P0~~（已完成）：~~卡 1 会话身份~~（`docs/task-session-id.md`）→
+   ~~卡 2 审计与产出~~（`docs/task-audit-artifacts.md`）
+3. 再补**列表屏 / 设置屏 / 会话切换**（设计稿 §2.2、§2.4、§3.5）——下一张
 
 token 从 `?token=` 挪到 hash 仍单独一张卡（要动二维码 / 启动器 / 文档）。
 
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
 
-下一张卡：卡 2「审计与产出」（`artifacts` 结构化、`decision` 广播、`rules` 撤销）；
-还没落文件，按 `docs/frontend-ia.md` §1 缺口 1 / 2 / 3 / 7 起卡。
+下一张卡：卡 3「列表屏 / 设置屏 / 会话切换」；还没落文件。
+`session/attach` 消息、S 轴、规则列表 UI 都并进这张。
 
 判定标准：**画得出来 = 想清楚了；画不出来就先别写代码。**
 

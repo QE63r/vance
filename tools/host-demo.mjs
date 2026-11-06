@@ -138,14 +138,15 @@ function inspectArtifacts(paths) {
     const w = inspectText(p);
     if (w) warnings.push(w);
   }
-  if (warnings.length === 0) return;
+  if (warnings.length === 0) return warnings;
   for (const w of warnings) console.log("  ⚠ " + w);
   host.broadcastNotice("deny", "产出检查：" + warnings.join("；"));
+  return warnings;
 }
 
 function reportArtifacts(before, after) {
   const { added, changed, removed } = diffSnapshot(before, after);
-  inspectArtifacts([...added, ...changed]);
+  const warnings = inspectArtifacts([...added, ...changed]);
   const total = added.length + changed.length + removed.length;
   if (total === 0) {
     host.broadcastNotice("auto", "本轮没有产生文件变化（只是回答，没有动文件）");
@@ -158,7 +159,8 @@ function reportArtifacts(before, after) {
   if (changed.length) parts.push(`改动 ${changed.length}`);
   if (removed.length) parts.push(`删除 ${removed.length}`);
   const names = [...added, ...changed, ...removed].slice(0, 4).map(short).join(" · ");
-  host.broadcastNotice("auto", `本轮产出：${parts.join("，")}（${names}${total > 4 ? " …" : ""}）`);
+  // 结构化广播：手机产出区靠它列文件，不再解析上面那句文案
+  host.broadcastArtifacts({ turnId: `turn-${Date.now()}`, added, changed, removed, warnings });
   console.log(`  📦 产出：${parts.join("，")}`);
   for (const p of [...added, ...changed].slice(0, 8)) console.log(`     + ${p}`);
 }
@@ -169,6 +171,19 @@ const host = new HostServer({
   pagePath: PAGE,
   webDir: WEB_DIR,
   projectName: "sandbox",
+});
+
+// 规则只在启动器手里：host 通过这两个口查询/撤销，不直接读 rules.json
+host.onRules({
+  list: () => [...remembered],
+  revoke: (key) => {
+    const i = remembered.indexOf(key);
+    if (i < 0) return false;
+    remembered.splice(i, 1);
+    saveRules();
+    console.log(`  ★ 已撤销规则：${key.slice(0, 60)}`);
+    return true;
+  },
 });
 
 host.onDecision(({ requestId, decision, by }) => {

@@ -389,3 +389,104 @@ describe("会话身份（session_id）", () => {
     expect(notice.text).toContain("ses_nope");
   });
 });
+
+describe("审计与产出", () => {
+  it("hello 带 server_time，且和本机时钟对得上", async () => {
+    server = makeServer({ port: 0, token: "a1", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_t", "T");
+    const { port } = await server.start();
+
+    const [hello] = await listen(port, "a1", 1);
+    expect(typeof hello.server_time).toBe("number");
+    expect(Math.abs(Date.now() - hello.server_time)).toBeLessThan(5000);
+  });
+
+  it("决定广播给所有设备，并作为审计写进流水", async () => {
+    server = makeServer({ port: 0, token: "a2", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_d", "D");
+    const { port } = await server.start();
+    server.onDecision(() => true);
+    server.broadcast(approval as any);
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=a2&device=dev-a`);
+    await new Promise((r) => ws.on("open", r));
+
+    const decisionMsg = new Promise<any>((resolve) => {
+      ws.on("message", (raw) => {
+        const m = JSON.parse(String(raw));
+        if (m.type === "decision") resolve(m);
+      });
+    });
+    ws.send(JSON.stringify({ type: "decision", requestId: "call_1", decision: "allow" }));
+
+    const decision = await decisionMsg;
+    expect(decision.requestId).toBe("call_1");
+    expect(decision.decision).toBe("allow");
+    expect(decision.session_id).toBe("ses_d");
+    expect(typeof decision.by).toBe("string");
+    expect(decision.by.length).toBeGreaterThan(0);
+    ws.close();
+
+    // 晚连的设备能从流水里看到这条决定（审计，不靠 notice 文案）
+    const late = await listen(port, "a2", 2, "dev-b", 3000, "ses_d");
+    const history = late.find((m) => m.type === "history");
+    expect(history.items.some((m: any) => m.type === "decision" && m.requestId === "call_1")).toBe(true);
+  });
+
+  it("产出发结构化消息，带会话归属并落流水", async () => {
+    server = makeServer({ port: 0, token: "a3", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_a", "A");
+    const { port } = await server.start();
+
+    const payload = {
+      turnId: "turn-1",
+      added: ["a.txt"],
+      changed: ["b.txt"],
+      removed: ["c.txt"],
+      warnings: ["w"],
+    };
+    server.broadcastArtifacts(payload);
+
+    const msgs = await listen(port, "a3", 2, "", 3000, "ses_a");
+    const history = msgs.find((m) => m.type === "history");
+    expect(history.session_id).toBe("ses_a");
+    const item = history.items.find((m: any) => m.type === "artifacts");
+    expect(item.artifacts).toEqual(payload);
+  });
+
+  it("/rules 能列出规则并撤销，未知 key 404", async () => {
+    const rules = ["remove-item|desktop", "new-item|desktop"];
+    server = makeServer({ port: 0, token: "a4", pagePath: PAGE, approveAllDevices: true });
+    server.onRules({
+      list: () => [...rules],
+      revoke: (key) => {
+        const i = rules.indexOf(key);
+        if (i < 0) return false;
+        rules.splice(i, 1);
+        return true;
+      },
+    });
+    const { port } = await server.start();
+
+    const before = (await (await fetch(`http://127.0.0.1:${port}/rules`)).json()) as any;
+    expect(before.rules).toEqual(["remove-item|desktop", "new-item|desktop"]);
+
+    const missing = await fetch(`http://127.0.0.1:${port}/rules/revoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "nope" }),
+    });
+    expect(missing.status).toBe(404);
+
+    const ok = await fetch(`http://127.0.0.1:${port}/rules/revoke`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ key: "remove-item|desktop" }),
+    });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as any).ok).toBe(true);
+
+    const after = (await (await fetch(`http://127.0.0.1:${port}/rules`)).json()) as any;
+    expect(after.rules).toEqual(["new-item|desktop"]);
+  });
+});

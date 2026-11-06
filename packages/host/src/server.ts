@@ -55,6 +55,21 @@ interface HistoryEntry {
   msg: unknown;
 }
 
+/** 「本轮产出」的结构化形状；前端产出区直接消费它，不再解析 notice 文案 */
+export interface ArtifactsPayload {
+  turnId: string;
+  added: string[];
+  changed: string[];
+  removed: string[];
+  warnings: string[];
+}
+
+/** 规则由启动器持有（~/.vance/rules.json）；host 只提供查询与撤销口 */
+export interface RulesProvider {
+  list(): string[];
+  revoke(key: string): boolean;
+}
+
 function isHistoryEntry(value: unknown): value is HistoryEntry {
   return (
     typeof value === "object" &&
@@ -138,6 +153,9 @@ export class HostServer {
    * 而 Agent 还在那头等着。
    */
   private readonly pendingApprovals = new Map<string, { event: AgentEvent; sessionId: string }>();
+
+  /** 规则的持有者；没有注入时 /rules 返回空列表 */
+  private rules: RulesProvider | null = null;
 
   /**
    * 会话流水，按会话分桶。
@@ -234,6 +252,16 @@ export class HostServer {
   /** 手机要看一眼屏幕；返回 data URL，失败返回 null */
   onScreenshot(handler: () => Promise<string | null>): void {
     this.shotHandler = handler;
+  }
+
+  /** 注入规则读写口：启动器是规则的唯一持有者，host 不碰文件 */
+  onRules(provider: RulesProvider): void {
+    this.rules = provider;
+  }
+
+  /** 一轮结束后的产出：结构化广播，同时落进流水 */
+  broadcastArtifacts(payload: ArtifactsPayload): void {
+    this.emit({ type: "artifacts", artifacts: payload });
   }
 
   /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
@@ -422,6 +450,48 @@ export class HostServer {
         res.end(req.method === "HEAD" ? undefined : JSON.stringify({ sessions }));
         return;
       }
+
+      // 规则：只读列表 + 撤销。规则文件由启动器持有，host 不碰磁盘。
+      if (url.pathname === "/rules") {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { allow: "GET, HEAD" });
+          res.end("method not allowed");
+          return;
+        }
+        const rules = this.rules?.list() ?? [];
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(req.method === "HEAD" ? undefined : JSON.stringify({ rules }));
+        return;
+      }
+
+      if (url.pathname === "/rules/revoke") {
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 64_000) req.destroy();
+        });
+        req.on("end", () => {
+          let key = "";
+          try {
+            key = String((JSON.parse(raw) as { key?: unknown })?.key ?? "");
+          } catch {
+            /* 坏 body 就当没给 key */
+          }
+          const ok = key !== "" && (this.rules?.revoke(key) ?? false);
+          res.writeHead(ok ? 200 : 404, {
+            "content-type": "application/json; charset=utf-8",
+            "cache-control": "no-store",
+          });
+          res.end(JSON.stringify({ ok, key }));
+        });
+        return;
+      }
       if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
         this.serveWeb(req, res, url.pathname);
         return;
@@ -556,6 +626,8 @@ export class HostServer {
         task: this.options.task ?? "",
         device: device.name,
         session_id: view,
+        // 手机倒计时需要跟服务端同一个时钟；缺了它只能信手机本地时间
+        server_time: Date.now(),
       }),
     );
 
@@ -657,13 +729,14 @@ export class HostServer {
     // ② 批准记录里必须带上"是谁点的"
     const accepted = this.handler?.({ requestId: msg.requestId, decision, by: device.name }) ?? false;
     if (accepted) {
-      const resolved = this.pendingApprovals.get(msg.requestId)?.event as any;
       this.pendingApprovals.delete(msg.requestId);
-      const verb = decision === "reject" ? "已拒绝" : "已批准";
+      // 决定本身就是审计记录：谁、什么时候、批还是拒。落流水，所有设备都收到。
       this.emit({
-        type: "notice",
-        level: "auto",
-        text: `${verb}：${String(resolved?.action_display ?? "").slice(0, 60)}（${device.name}）`,
+        type: "decision",
+        requestId: msg.requestId,
+        decision,
+        by: device.name,
+        at: Date.now(),
       });
     }
     socket.send(
