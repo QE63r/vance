@@ -5,7 +5,7 @@
  * 所有判断都在 translate.ts 里，这个文件不做任何解释性的决定。
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn, type ChildProcess } from "node:child_process";
 import type { ApprovalRequest, StatusUpdate } from "@vance/core";
 import { defaultOptions, pickAcpOption, translateAcpLine } from "./translate.js";
 
@@ -114,6 +114,30 @@ export class AcpClient {
         params: { sessionId: this.sessionId, prompt: [{ type: "text", text }] },
       });
     });
+  }
+
+  /**
+   * 强制终止 Agent 进程。
+   * cancel 只是"请求"，Agent 完全可以不理；这个才是真的按住它。
+   * Windows 上直接 taskkill /T，连子进程一起收掉。
+   */
+  kill(reason = "force stop"): void {
+    const pid = this.child?.pid;
+    if (!pid) return;
+    this.log(`[acp] 强制终止 Agent 进程 (pid ${pid}, ${reason})`);
+    try {
+      if (process.platform === "win32") {
+        const taskkill = `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\taskkill.exe`;
+        execSync(`"${taskkill}" /PID ${pid} /T /F`, { stdio: "ignore" });
+      } else {
+        process.kill(pid, "SIGKILL");
+      }
+    } catch {}
+    // 进程没了，这一轮必须收尾，否则界面永远停在"正在执行"
+    this.settled?.("killed");
+    this.settled = null;
+    this.turnId = null;
+    this.child = null;
   }
 
   /** 让 Agent 停下来（ACP 的 session/cancel） */
