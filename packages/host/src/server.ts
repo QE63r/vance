@@ -147,6 +147,13 @@ export class HostServer {
     this.emit({ type: "event", event });
   }
 
+  /** 广播一帧屏幕画面（二进制 JPEG，不走 JSON，省 33% 体积） */
+  broadcastFrame(frame: Buffer): void {
+    for (const client of this.clients) {
+      if (client.readyState === client.OPEN) client.send(frame, { binary: true });
+    }
+  }
+
   /** 主动忘掉一条请求（超时、Agent 自己撤回等情况） */
   forget(requestId: string): void {
     this.pendingApprovals.delete(requestId);

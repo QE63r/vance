@@ -141,6 +141,21 @@
   .stop { background: var(--danger); }
   .hint { max-width: 680px; margin: 6px auto 0; font-size: 11px; color: #55636f; text-align: center; }
 
+  /* 实时画面小窗：默认缩在右下角，点一下放大 */
+  #screen-mini {
+    position: fixed; right: 12px; bottom: calc(104px + env(safe-area-inset-bottom));
+    width: 132px; z-index: 4; background: #000;
+    border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 8px 22px rgba(0,0,0,.5); transition: width .18s ease;
+  }
+  #screen-mini img { display: block; width: 100%; height: auto; }
+  #screen-mini .badge {
+    position: absolute; left: 6px; top: 6px; font-size: 10px; letter-spacing: .05em;
+    color: #d8f3ff; background: rgba(0,0,0,.55); padding: 1px 6px; border-radius: 6px;
+  }
+  #screen-mini.expanded { left: 10px; right: 10px; width: auto; bottom: calc(104px + env(safe-area-inset-bottom)); }
+  #screen-mini.hidden-soft { opacity: .35; }
+
   @keyframes pulse { 50% { opacity: .35; } }
 </style>
 </head>
@@ -153,6 +168,11 @@
 <main>
   <div id="feed"></div>
 </main>
+
+<div id="screen-mini" hidden>
+  <img id="screen-img" alt="电脑屏幕">
+  <span class="badge">实时</span>
+</div>
 
 <div class="composer">
   <div class="row">
@@ -448,12 +468,31 @@
 
     socket.onerror = () => {};
 
+    socket.binaryType = "blob";
     socket.onmessage = (e) => {
       if (ws !== socket) return;
+      // 二进制 = 屏幕帧，不走 JSON
+      if (typeof e.data !== "string") { onFrame(e.data); return; }
       let msg; try { msg = JSON.parse(e.data); } catch { return; }
       dispatch(msg);
     };
   }
+
+  /* ── 实时画面 ── */
+  const miniEl = document.getElementById("screen-mini");
+  const miniImg = document.getElementById("screen-img");
+
+  function onFrame(blob) {
+    const url = URL.createObjectURL(blob);
+    const old = miniImg.src;
+    miniImg.src = url;
+    if (old && old.startsWith("blob:")) URL.revokeObjectURL(old);
+    if (miniEl.hidden) miniEl.hidden = false;
+  }
+
+  miniEl.addEventListener("click", () => {
+    miniEl.classList.toggle("expanded");
+  });
 
   /** 一条消息怎么处理——实时收到和历史补发走同一条路 */
   function dispatch(msg) {
