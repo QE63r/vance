@@ -124,9 +124,17 @@ describe("空会话", () => {
   it("连上但还没有任何一轮时，执行轴是空闲，第一条消息能发", () => {
     let s = reduce(initialState, { type: "connect" });
     s = reduce(s, { type: "open" });
-    s = reduce(s, { type: "msg", msg: { type: "hello", project: "sandbox", device: "phone" } });
+    s = reduce(s, {
+      type: "msg",
+      msg: { type: "hello", project: "sandbox", device: "phone", session_id: "ses_x" },
+    });
 
     expect(s.exec.phase).toBe("idle");
     expect(canSend(s)).toBe(true);
+    expect(s.sessionId).toBe("ses_x");
+
+    // 切会话：只改"在看哪条"
+    s = reduce(s, { type: "msg", msg: { type: "session", session_id: "ses_y", title: "Y", active: false } });
+    expect(s.sessionId).toBe("ses_y");
   });
 });

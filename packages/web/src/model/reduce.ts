@@ -50,6 +50,8 @@ export interface State {
   timeline: TimelineItem[];
   project: string;
   task: string;
+  /** 当前正在看哪条会话；hello / session 都会更新它 */
+  sessionId: string;
   lastEventAt: number | null;
   replaying: boolean;
   seq: number;
@@ -63,6 +65,7 @@ export const initialState: State = {
   timeline: [],
   project: "",
   task: "",
+  sessionId: "",
   lastEventAt: null,
   replaying: false,
   seq: 0,
@@ -176,6 +179,7 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         ...s,
         project: msg.project || s.project,
         task: msg.task ?? s.task,
+        sessionId: msg.session_id ?? s.sessionId,
         link: { phase: "ready", attempts: 0 },
         device: { ...s.device, phase: "trusted", name: msg.device || s.device.name },
         // 还没见过任何一轮 = 空会话，等同于空闲；否则第一条消息永远发不出去
@@ -270,9 +274,9 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
     case "device_approved":
       return { ...s, device: { ...s.device, phase: "trusted" } };
 
-    // 会话就绪/切换：这一屏还不显示会话列表，先收下不动（UI 在下一张卡）
+    // 会话就绪/切换：换的是"正在看哪条"，不碰时间线（history 会来重建）
     case "session":
-      return s;
+      return { ...s, sessionId: msg.session_id };
 
     default:
       // 服务端以后加新消息类型时，老页面应该忽略，而不是把 state 变成 undefined 白屏

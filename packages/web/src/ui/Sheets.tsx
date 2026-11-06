@@ -73,3 +73,93 @@ export function DeviceSheet({ request, onDecide }: { request: DeviceRequest; onD
     </Sheet>
   );
 }
+
+export interface SessionRow {
+  id: string;
+  title: string;
+  active: boolean;
+}
+
+export function MenuSheet({
+  onSessions,
+  onRules,
+  onClose,
+}: {
+  onSessions: () => void;
+  onRules: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet title="更多" onClose={onClose}>
+      <button className="menu-row" type="button" onClick={onSessions}>
+        <span>任务列表</span>
+        <span className="menu-arrow">›</span>
+      </button>
+      <button className="menu-row" type="button" onClick={onRules}>
+        <span>记住的规则</span>
+        <span className="menu-arrow">›</span>
+      </button>
+      <div className="sheet-note">切任务只改"看哪条"，不会停掉正在跑的那条。</div>
+    </Sheet>
+  );
+}
+
+export function SessionsSheet({
+  sessions,
+  currentId,
+  onPick,
+  onClose,
+}: {
+  sessions: SessionRow[];
+  currentId: string;
+  onPick: (id: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet title="任务" onClose={onClose}>
+      {sessions.length === 0 && <div className="sheet-empty">还没有任务</div>}
+      {sessions.map((s) => (
+        <button
+          key={s.id}
+          className={`session-row${s.id === currentId ? " current" : ""}`}
+          type="button"
+          onClick={() => onPick(s.id)}
+        >
+          <span className="session-title">{s.title || s.id}</span>
+          <span className="session-meta">
+            {s.active ? "当前会话" : "历史"}
+            {s.id === currentId ? " · 正在看" : ""}
+          </span>
+        </button>
+      ))}
+      <div className="sheet-note">旧账（legacy）是加 session_id 之前的记录，只读。</div>
+    </Sheet>
+  );
+}
+
+export function RulesSheet({
+  rules,
+  onRevoke,
+  onClose,
+}: {
+  rules: string[];
+  onRevoke: (key: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet title="记住的规则" onClose={onClose}>
+      {rules.length === 0 && <div className="sheet-empty">还没有记住的规则</div>}
+      {rules.map((key) => (
+        <div className="rule-row" key={key}>
+          <span className="rule-text" title={key}>
+            {key}
+          </span>
+          <button className="btn deny" type="button" onClick={() => onRevoke(key)}>
+            撤销
+          </button>
+        </div>
+      ))}
+      <div className="sheet-note">撤销后，同类操作下次会重新问你。</div>
+    </Sheet>
+  );
+}

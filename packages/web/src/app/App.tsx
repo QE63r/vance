@@ -5,12 +5,14 @@ import { send } from "../net/ws";
 import { Timeline } from "../ui/Timeline";
 import { Composer } from "../ui/Composer";
 import { ScreenMini } from "../ui/ScreenMini";
-import { ArtifactsSheet, DeviceSheet } from "../ui/Sheets";
+import { ArtifactsSheet, DeviceSheet, MenuSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
 
 export function App() {
   const s = useVance();
   const [now, setNow] = useState(() => Date.now());
-  const [sheet, setSheet] = useState<null | "artifacts">(null);
+  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules">(null);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [rules, setRules] = useState<string[]>([]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stick = useRef(true);
 
@@ -35,6 +37,46 @@ export function App() {
   const artifacts = latestArtifacts(s);
   const result = artifacts ? artifacts.data : null;
 
+  const openSessions = async () => {
+    try {
+      const res = await fetch("/sessions");
+      const data = (await res.json()) as { sessions?: SessionRow[] };
+      setSessions(data.sessions ?? []);
+    } catch {
+      setSessions([]);
+    }
+    setSheet("sessions");
+  };
+
+  const openRules = async () => {
+    try {
+      const res = await fetch("/rules");
+      const data = (await res.json()) as { rules?: string[] };
+      setRules(data.rules ?? []);
+    } catch {
+      setRules([]);
+    }
+    setSheet("rules");
+  };
+
+  const revokeRule = async (key: string) => {
+    try {
+      const res = await fetch("/rules/revoke", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ key }),
+      });
+      if (res.ok) setRules((list) => list.filter((k) => k !== key));
+    } catch {
+      /* 网络失败保持原样，下次再点 */
+    }
+  };
+
+  const pickSession = (id: string) => {
+    send({ type: "session/attach", sessionId: id });
+    setSheet(null);
+  };
+
   return (
     <div className="app">
       <header className={`hdr link-${s.link.phase}`}>
@@ -47,6 +89,9 @@ export function App() {
             <span className="dot" />
             <span className="conn-text">{linkText(s)}</span>
           </div>
+          <button className="hdr-menu" type="button" aria-label="更多" onClick={() => setSheet("menu")}>
+            ⋯
+          </button>
         </div>
         <div className="rail">
           <span className={`chip exec-${s.exec.phase}`}>{execText(s)}</span>
@@ -90,6 +135,11 @@ export function App() {
       <ScreenMini ready={linkReady(s)} />
 
       {sheet === "artifacts" && result && <ArtifactsSheet data={result} onClose={() => setSheet(null)} />}
+      {sheet === "menu" && <MenuSheet onSessions={openSessions} onRules={openRules} onClose={() => setSheet(null)} />}
+      {sheet === "sessions" && (
+        <SessionsSheet sessions={sessions} currentId={s.sessionId} onPick={pickSession} onClose={() => setSheet(null)} />
+      )}
+      {sheet === "rules" && <RulesSheet rules={rules} onRevoke={revokeRule} onClose={() => setSheet(null)} />}
       {s.device.incoming.length > 0 && (
         <DeviceSheet
           request={s.device.incoming[0]}
