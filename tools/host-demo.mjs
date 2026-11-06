@@ -215,6 +215,37 @@ if (USE_TUNNEL) {
   ];
   const exe = CANDIDATES.find((p) => p === "cloudflared" || existsSync(p)) ?? "cloudflared";
 
+  // 有命名隧道配置就走固定地址；否则用临时隧道（地址每次变）
+  const namedCfgPath = join(homedir(), ".vance", "tunnel.json");
+  let named = null;
+  try {
+    named = JSON.parse(readFileSync(namedCfgPath, "utf8"));
+  } catch {}
+
+  if (named?.host) {
+    console.log(`  正在建立固定隧道：${named.name} → https://${named.host}`);
+    const cf = spawn(exe, ["tunnel", "run", "--url", `http://127.0.0.1:${port}`, named.name], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const publicUrl = `https://${named.host}/?token=${token}`;
+    console.log("");
+    console.log("  ── 公网地址（固定，重启也不变）────────────");
+    qrcode.generate(publicUrl, { small: true });
+    console.log(`  ${publicUrl}`);
+    console.log("  ────────────────────────────────────────");
+    try {
+      writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
+      void QRCode.toFile(join(homedir(), ".vance", "qr.png"), publicUrl, {
+        width: 720, margin: 2, color: { dark: "#11181f", light: "#ffffff" },
+      });
+    } catch {}
+    cf.stderr.on("data", (d) => {
+      const s = String(d);
+      if (/error|ERR/i.test(s)) console.log("  [tunnel] " + s.trim().slice(0, 120));
+    });
+    cf.on("exit", (code) => console.log(`  [tunnel] cloudflared 退出（${code}）`));
+  } else {
+
   console.log("  正在建立公网隧道（cloudflared）…");
   const cf = spawn(exe, ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"], {
     stdio: ["ignore", "pipe", "pipe"],
@@ -254,6 +285,7 @@ if (USE_TUNNEL) {
   cf.stdout.on("data", scan);
   cf.stderr.on("data", scan);
   cf.on("exit", (code) => console.log(`  [tunnel] cloudflared 退出（${code}）`));
+  }
 }
 
 const client = new AcpClient(
