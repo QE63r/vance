@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canSend } from "../src/model/selectors";
 import { initialState, reduce, type State } from "../src/model/reduce";
 import type { ApprovalEvent, ServerMsg, Step } from "../src/model/types";
 
@@ -116,5 +117,16 @@ describe("四轴互不覆盖", () => {
     expect(later.approvals["req-1"].phase).toBe("expired");
     expect(later.exec.phase).toBe("running");
     expect(later.link.phase).toBe("ready");
+  });
+});
+
+describe("空会话", () => {
+  it("连上但还没有任何一轮时，执行轴是空闲，第一条消息能发", () => {
+    let s = reduce(initialState, { type: "connect" });
+    s = reduce(s, { type: "open" });
+    s = reduce(s, { type: "msg", msg: { type: "hello", project: "sandbox", device: "phone" } });
+
+    expect(s.exec.phase).toBe("idle");
+    expect(canSend(s)).toBe(true);
   });
 });
