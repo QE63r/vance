@@ -344,11 +344,15 @@ host.onPrompt(async (text) => {
   } catch (err) {
     console.log("  出错：" + String(err));
   } finally {
-    const after = new Map();
-    for (const d of watchDirs) for (const [k, v] of snapshot(d)) after.set(k, v);
-    reportArtifacts(before, after);
+    const stopped = !running; // 被停止/强杀的轮次不做产出判定
+    if (!stopped) {
+      const after = new Map();
+      for (const d of watchDirs) for (const [k, v] of snapshot(d)) after.set(k, v);
+      reportArtifacts(before, after);
+    }
 
     running = false;
+    if (turnWatch) { turnWatch(); turnWatch = null; }
     host.broadcastTurn("idle");
   }
 });
@@ -376,11 +380,24 @@ host.onScreenshot(async () => {
 
 host.onStop(() => {
   console.log("  ⏹ 手机要求停止");
-  client.cancel();
-  host.broadcastTurn("stopped");
+  client.cancel(); // 先按协议请它停
+
+  // 3 秒还没停下，就不再客气：直接杀进程
+  const hard = setTimeout(() => {
+    if (!running) return;
+    console.log("  ⛔ 3 秒内没有停下，强制终止");
+    client.kill("用户按了停止");
+    host.broadcastNotice("deny", "Agent 没有在 3 秒内停止，已强制终止；下一句会开新会话");
+    host.broadcastTurn("stopped");
+    running = false;
+  }, 3000);
+
+  // 它自己停了，就把定时器撤掉
+  turnWatch = () => clearTimeout(hard);
 });
 
 let running = false;
+let turnWatch = null; // 停止时用来撤掉"强制终止"的定时器
 
 console.log("  就绪。等你在手机上发话——服务端不会替你说任何话。");
 console.log("");
