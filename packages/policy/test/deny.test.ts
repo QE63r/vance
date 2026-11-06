@@ -6,6 +6,25 @@ import { checkDeny, classifyApproval, treatKey } from "../src/index.js";
  * 每一条都必须 deny，而且不能被"记住"覆盖。
  */
 
+describe("禁止清单不该误伤", () => {
+  it("运行 Program Files 里的程序并丢弃输出，不算写系统目录", () => {
+    const v = checkDeny({
+      action_display:
+        'chcp 65001 > $null; & "C:\\Program Files\\LibreOffice\\program\\soffice.exe" --headless --convert-to pdf --outdir "C:\\Users\\1\\Desktop\\out" "C:\\Users\\1\\Desktop\\a.docx"',
+      facts: { kind: "execute" },
+    });
+    expect(v).toBeNull();
+  });
+
+  it("但真的往系统目录写，仍然禁止", () => {
+    const v = checkDeny({
+      action_display: 'Copy-Item a.txt "C:\\Program Files\\evil.txt"',
+      facts: { kind: "execute" },
+    });
+    expect(v?.deny).toBe(true);
+  });
+});
+
 describe("永久禁止（连批准都不给）", () => {
   const forbidden: Array<[string, Record<string, unknown>, string]> = [
     ["Format-Volume -DriveLetter D", { kind: "execute" }, "格式化磁盘"],

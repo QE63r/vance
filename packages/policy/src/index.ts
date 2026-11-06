@@ -81,8 +81,11 @@ export function checkDeny(event: {
     if (re.test(action)) return DENY(`${why}：永久禁止`);
   }
 
-  // 路径禁令只对"写"生效：读系统目录是正常需求
-  const isWrite = kind === "edit" || (kind === "execute" && WRITE_VERB.test(action));
+  // 路径禁令只对"写"生效：读系统目录、运行系统目录里的程序都是正常需求。
+  // `> $null` 是丢弃输出，不是写文件——不算写操作（否则调用
+  // C:\Program Files 下的转换工具会被误判成"写系统目录"）。
+  const normalized = action.replace(/\d?>\s*\$null/gi, " ");
+  const isWrite = kind === "edit" || (kind === "execute" && WRITE_VERB.test(normalized));
   if (isWrite) {
     for (const [re, why] of DENY_PATH) {
       if (re.test(haystack)) return DENY(`${why}：不可写入`);
