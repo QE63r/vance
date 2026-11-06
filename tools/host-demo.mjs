@@ -63,7 +63,11 @@ function snapshot(root, maxDepth = 3) {
         if (/^(node_modules|\.git|\.vance)$/i.test(e.name)) continue;
         walk(p, depth + 1);
       } else {
-        try { out.set(p, statSync(p).size); } catch {}
+        try {
+          const st = statSync(p);
+          // 大小 + 修改时间：覆盖成同样大小的文件也能发现
+          out.set(p, `${st.size}:${Math.round(st.mtimeMs)}`);
+        } catch {}
       }
     }
   };
