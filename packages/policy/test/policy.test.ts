@@ -51,3 +51,37 @@ describe("同一个事实，两种写法", () => {
     expect(classifyApproval(ps, [treatKey(bash)]).auto).toBe(true);
   });
 });
+
+describe("权限档位", () => {
+  const roots = ["C:\\Users\\1\\Desktop", "C:\\Users\\1\\Desktop\\梵境\\sandbox"];
+  const edit = (path: string) => ({
+    action_display: "写文件",
+    facts: { kind: "edit", effect: "write", writes: [path] },
+  });
+  const runScript = (path: string) => ({
+    action_display: "跑脚本",
+    facts: { kind: "execute", effect: "unknown", script: path },
+  });
+
+  it("工作区：桌面内的写直接放行", () => {
+    expect(classifyApproval(edit("C:\\Users\\1\\Desktop\\a.docx"), { profile: "workspace", workspaceRoots: roots }).auto).toBe(true);
+  });
+
+  it("工作区：写系统目录仍然禁止", () => {
+    const v = classifyApproval(edit("C:\\Program Files\\evil.txt"), { profile: "workspace", workspaceRoots: roots });
+    expect(v.deny).toBe(true);
+  });
+
+  it("工作区：运行工作区内的脚本放行", () => {
+    expect(classifyApproval(runScript("C:\\Users\\1\\Desktop\\梵境\\sandbox\\build.ps1"), { profile: "workspace", workspaceRoots: roots }).auto).toBe(true);
+  });
+
+  it("只读：桌面写也要问", () => {
+    expect(classifyApproval(edit("C:\\Users\\1\\Desktop\\a.docx"), { profile: "read-only", workspaceRoots: roots }).auto).toBe(false);
+  });
+
+  it("完全：工作区外的写也放行，但硬禁止仍拦", () => {
+    expect(classifyApproval(edit("C:\\other\\a.txt"), { profile: "full", workspaceRoots: roots }).auto).toBe(true);
+    expect(classifyApproval(edit("C:\\Windows\\x.dll"), { profile: "full", workspaceRoots: roots }).deny).toBe(true);
+  });
+});

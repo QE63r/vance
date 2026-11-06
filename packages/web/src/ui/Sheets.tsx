@@ -1,4 +1,4 @@
-import type { ArtifactsPayload, DeviceRequest } from "../model/types";
+import type { ArtifactsPayload, DeviceRequest, Profile } from "../model/types";
 
 function Sheet({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
@@ -83,10 +83,12 @@ export interface SessionRow {
 export function MenuSheet({
   onSessions,
   onRules,
+  onProfile,
   onClose,
 }: {
   onSessions: () => void;
   onRules: () => void;
+  onProfile: () => void;
   onClose: () => void;
 }) {
   return (
@@ -99,7 +101,46 @@ export function MenuSheet({
         <span>记住的规则</span>
         <span className="menu-arrow">›</span>
       </button>
+      <button className="menu-row" type="button" onClick={onProfile}>
+        <span>权限档位</span>
+        <span className="menu-arrow">›</span>
+      </button>
       <div className="sheet-note">切任务只改"看哪条"，不会停掉正在跑的那条。</div>
+    </Sheet>
+  );
+}
+
+const PROFILE_ROWS: Array<[Profile, string, string]> = [
+  ["read-only", "只读", "只看不写：任何改动都要问"],
+  ["workspace", "工作区（默认）", "桌面、sandbox 内的写和脚本直接放行"],
+  ["full", "完全权限", "当前任务内除硬禁止外全部放行"],
+];
+
+export function ProfileSheet({
+  profile,
+  onPick,
+  onClose,
+}: {
+  profile: Profile;
+  onPick: (profile: Profile) => void;
+  onClose: () => void;
+}) {
+  return (
+    <Sheet title="权限档位" onClose={onClose}>
+      {PROFILE_ROWS.map(([value, name, desc]) => (
+        <button
+          key={value}
+          className={`profile-row${value === profile ? " current" : ""}`}
+          type="button"
+          onClick={() => onPick(value)}
+        >
+          <span className="profile-name">{name}</span>
+          <span className="profile-desc">{desc}</span>
+        </button>
+      ))}
+      <div className="sheet-note">
+        硬禁止（系统目录、凭据、磁盘级操作）任何档位都不放；完全权限只对当前任务有效。
+      </div>
     </Sheet>
   );
 }

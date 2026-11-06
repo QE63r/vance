@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
@@ -44,7 +44,12 @@ function historyFile(): string {
 }
 
 function makeServer(options: Omit<HostOptions, "historyFile"> & { historyFile?: string }): HostServer {
-  return new HostServer({ ...options, historyFile: options.historyFile ?? historyFile() });
+  const history = options.historyFile ?? historyFile();
+  return new HostServer({
+    ...options,
+    historyFile: history,
+    profileFile: join(dirname(history), "profile.json"),
+  });
 }
 
 /** 等一条满足条件的消息（不关连接，用来测中途切换） */
@@ -594,5 +599,36 @@ describe("流式片段不切碎历史", () => {
     const history = msgs.find((m) => m.type === "history");
     const chats = history.items.filter((i: any) => i.type === "chat");
     expect(chats.map((c: any) => c.text)).toEqual(["你好", "再见"]);
+  });
+});
+
+describe("权限档位（host）", () => {
+  it("/profile 需要 token，默认 workspace", async () => {
+    server = makeServer({ port: 0, token: "pf1", pagePath: PAGE, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const denied = await fetch(`http://127.0.0.1:${port}/profile`);
+    expect(denied.status).toBe(401);
+
+    const ok = await fetch(`http://127.0.0.1:${port}/profile`, {
+      headers: { "x-vance-token": "pf1" },
+    });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as any).profile).toBe("workspace");
+  });
+
+  it("切换档位后 hello 带新档位", async () => {
+    server = makeServer({ port: 0, token: "pf2", pagePath: PAGE, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/profile`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "pf2" },
+      body: JSON.stringify({ profile: "full" }),
+    });
+    expect(res.status).toBe(200);
+
+    const [hello] = await listen(port, "pf2", 1);
+    expect(hello.profile).toBe("full");
   });
 });

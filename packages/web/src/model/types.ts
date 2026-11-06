@@ -72,6 +72,9 @@ export interface ArtifactsPayload {
 
 export type Decision = "allow" | "reject" | "remember";
 
+/** 权限档位：只读 / 工作区 / 完全 */
+export type Profile = "read-only" | "workspace" | "full";
+
 export interface DeviceRequest {
   deviceId: string;
   name: string;
@@ -81,7 +84,7 @@ export interface DeviceRequest {
 
 /** host → 手机 */
 export type ServerMsg =
-  | { type: "hello"; project: string; task?: string; device: string; session_id?: string; server_time?: number }
+  | { type: "hello"; project: string; task?: string; device: string; session_id?: string; server_time?: number; profile?: Profile }
   | { type: "history"; items: ServerMsg[]; session_id?: string }
   | { type: "event"; event: AgentEvent }
   | { type: "chat"; role: "agent"; messageId: string; text: string }
@@ -93,6 +96,7 @@ export type ServerMsg =
   | { type: "decision"; requestId: string; decision: Decision; by: string; at: number; session_id?: string }
   | { type: "artifacts"; artifacts: ArtifactsPayload }
   | { type: "session"; session_id: string; title: string; active: boolean }
+  | { type: "profile"; profile: Profile; from?: Profile }
   | { type: "device_request"; deviceId: string; name: string; ip: string; at: number }
   | { type: "device_pending"; name: string }
   | { type: "device_approved" };
