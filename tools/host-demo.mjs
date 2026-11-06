@@ -83,11 +83,15 @@ console.log("  梵境 · 等待手机连接");
 console.log("  ────────────────────────────────────────");
 if (real) console.log(`  网卡：${real.iface}  地址：${real.address}`);
 console.log("");
+console.log("  【同一个 wifi】手机和这台电脑连同一个网络时，扫这个（更快）：");
+console.log("");
 qrcode.generate(url, { small: true });
 console.log("");
 console.log(`  ${url}`);
+console.log("");
+console.log("  ⚠ 手机用流量、或不在同一个 wifi 时，这个地址打不开——");
+console.log("    用下面马上会出现的【公网】码。");
 console.log("  ────────────────────────────────────────");
-console.log("  手机扫码，或手动输入上面的地址");
 console.log("");
 
 if (USE_TUNNEL) {
@@ -122,11 +126,15 @@ if (USE_TUNNEL) {
         });
       } catch {}
       console.log("");
-      console.log("  ── 公网地址（4G 也能用）──────────────────");
-      qrcode.generate(publicUrl, { small: true });
-      console.log(`  ${publicUrl}`);
       console.log("  ────────────────────────────────────────");
-      console.log("  注意：这个地址是公开可访问的，只发给自己。");
+      console.log("  【公网】手机用流量 / 不在同一个 wifi 时，扫这个：");
+      console.log("");
+      qrcode.generate(publicUrl, { small: true });
+      console.log("");
+      console.log(`  ${publicUrl}`);
+      console.log("");
+      console.log("  ⚠ 这个地址是公开可访问的，只发给自己；每次重启都会变。");
+      console.log("  ────────────────────────────────────────");
       console.log("");
     }
   };
