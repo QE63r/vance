@@ -197,9 +197,17 @@ export class HostServer {
           task: this.options.task ?? "",
         }),
       );
-      // 补发历史：刷新、换设备、锁屏回来都能接上
-      if (this.history.length > 0) {
-        socket.send(JSON.stringify({ type: "history", items: this.history }));
+      // 补发历史：刷新、换设备、锁屏回来都能接上。
+      // 剔除审批事件：历史里的审批早就作废，重放出来会像「现在要你批」。
+      const past = this.history.filter(
+            (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
+          );
+      if (past.length > 0) {
+        socket.send(JSON.stringify({ type: "history", items: past }));
+      }
+      // 真正还在等决定的，才作为卡片重发
+      for (const pending of this.pendingApprovals.values()) {
+        socket.send(JSON.stringify({ type: "event", event: pending }));
       }
       // 待审批的请求已经包含在 history 里，不再单独补发，避免重复
 
@@ -212,8 +220,14 @@ export class HostServer {
         }
         // 页面要求重新同步：把权威历史再发一遍，修掉流式渲染可能漏掉的内容
         if (msg?.type === "resync") {
-          if (this.history.length > 0) {
-            socket.send(JSON.stringify({ type: "history", items: this.history }));
+          const past = this.history.filter(
+            (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
+          );
+          if (past.length > 0) {
+            socket.send(JSON.stringify({ type: "history", items: past }));
+          }
+          for (const pending of this.pendingApprovals.values()) {
+            socket.send(JSON.stringify({ type: "event", event: pending }));
           }
           return;
         }
@@ -241,7 +255,17 @@ export class HostServer {
         const decision: Decision =
           msg.decision === "allow" ? "allow" : msg.decision === "remember" ? "remember" : "reject";
         const accepted = this.handler?.({ requestId: msg.requestId, decision }) ?? false;
-        if (accepted) this.pendingApprovals.delete(msg.requestId);
+        if (accepted) {
+          const resolved = this.pendingApprovals.get(msg.requestId) as any;
+          this.pendingApprovals.delete(msg.requestId);
+          // 记一笔：让历史里留下「这件事已经处理过」的痕迹
+          const verb = decision === "reject" ? "已拒绝" : "已批准";
+          this.emit({
+            type: "notice",
+            level: "auto",
+            text: `${verb}：${String(resolved?.action_display ?? "").slice(0, 60)}`,
+          });
+        }
         socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted }));
       });
 

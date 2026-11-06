@@ -6,6 +6,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
+import QRCode from "qrcode";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
@@ -113,6 +114,12 @@ if (USE_TUNNEL) {
       // 写文件：Node 的 stdout 接管道时是块缓冲，日志可能迟迟不刷出来
       try {
         writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
+        // 顺手画一张二维码图片：终端里的码在后台运行时看不见
+        void QRCode.toFile(join(homedir(), ".vance", "qr.png"), publicUrl, {
+          width: 720,
+          margin: 2,
+          color: { dark: "#11181f", light: "#ffffff" },
+        });
       } catch {}
       console.log("");
       console.log("  ── 公网地址（4G 也能用）──────────────────");
