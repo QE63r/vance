@@ -2,7 +2,7 @@
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { createHash, randomBytes } from "node:crypto";
 import { execSync, spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
@@ -96,8 +96,54 @@ function diffSnapshot(before, after) {
   return { added, changed, removed };
 }
 
+
+/**
+ * 轻量内容校验：只查"生成了但内容不对"这类问题。
+ * 它说自己带 BOM，磁盘说不带——这种不一致只有查了才知道。
+ */
+function inspectText(path) {
+  try {
+    const ext = extname(path).toLowerCase();
+    if (![".csv", ".json", ".txt", ".md", ".log"].includes(ext)) return null;
+    if (statSync(path).size > 2_000_000) return null;
+
+    const buf = readFileSync(path);
+    const bom = buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf;
+    const name = basename(path);
+
+    let text;
+    try {
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buf);
+    } catch {
+      return `${name} 不是 UTF-8（别的程序打开会乱码）`;
+    }
+
+    if (ext === ".json") {
+      try { JSON.parse(text); } catch { return `${name} 不是合法 JSON`; }
+    }
+    if (ext === ".csv" && !bom) {
+      return `${name} 没有 BOM，Excel 打开中文会乱码`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function inspectArtifacts(paths) {
+  const warnings = [];
+  for (const p of paths.slice(0, 10)) {
+    const w = inspectText(p);
+    if (w) warnings.push(w);
+  }
+  if (warnings.length === 0) return;
+  for (const w of warnings) console.log("  ⚠ " + w);
+  host.broadcastNotice("deny", "产出检查：" + warnings.join("；"));
+}
+
 function reportArtifacts(before, after) {
   const { added, changed, removed } = diffSnapshot(before, after);
+  inspectArtifacts([...added, ...changed]);
   const total = added.length + changed.length + removed.length;
   if (total === 0) {
     host.broadcastNotice("deny", "本轮没有任何文件变化——它说的和它做的，对不上");
