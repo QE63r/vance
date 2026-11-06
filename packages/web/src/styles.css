@@ -864,3 +864,84 @@ button:disabled {
     animation: none !important;
   }
 }
+
+/* 顶部「⋯」与任务/规则面板 */
+.hdr-menu {
+  width: 34px;
+  height: 34px;
+  margin-left: 10px;
+  border-radius: 10px;
+  border: 1px solid #1e293b;
+  background: #0f172a;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 2px;
+  border: 0;
+  border-bottom: 1px solid #16202e;
+  background: none;
+  color: #e2e8f0;
+  font-size: 15px;
+  text-align: left;
+}
+
+.menu-arrow {
+  color: #64748b;
+}
+
+.session-row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 12px 10px;
+  border: 1px solid #1e293b;
+  border-radius: 12px;
+  background: #0f172a;
+  text-align: left;
+}
+
+.session-row.current {
+  border-color: #2563eb;
+  background: #0b1a33;
+}
+
+.session-title {
+  color: #e2e8f0;
+  font-size: 14px;
+}
+
+.session-meta {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.rule-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #16202e;
+}
+
+.rule-text {
+  flex: 1;
+  min-width: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.rule-row .btn {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 32px;
+}

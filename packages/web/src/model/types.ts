@@ -103,5 +103,6 @@ export type ClientMsg =
   | { type: "stop" }
   | { type: "decision"; requestId: string; decision: Decision }
   | { type: "resync" }
+  | { type: "session/attach"; sessionId: string }
   | { type: "screenshot" }
   | { type: "device_decision"; deviceId: string; allow: boolean };

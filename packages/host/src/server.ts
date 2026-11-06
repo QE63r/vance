@@ -700,6 +700,36 @@ export class HostServer {
       }
       return;
     }
+    if (msg?.type === "session/attach" && typeof msg.sessionId === "string") {
+      const target = this.sessions.get(msg.sessionId);
+      if (!target) {
+        socket.send(
+          JSON.stringify({
+            type: "notice",
+            level: "deny",
+            session_id: device.viewSessionId,
+            text: `会话 ${msg.sessionId} 不存在`,
+          }),
+        );
+        return;
+      }
+      device.viewSessionId = target.id;
+      socket.send(
+        JSON.stringify({
+          type: "session",
+          session_id: target.id,
+          title: target.title,
+          active: target.id === this.activeSessionId,
+        }),
+      );
+      const past = this.historyFor(target.id);
+      if (past.length > 0) socket.send(JSON.stringify({ type: "history", session_id: target.id, items: past }));
+      for (const pending of this.pendingApprovals.values()) {
+        if (pending.sessionId !== target.id) continue;
+        socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: target.id }));
+      }
+      return;
+    }
     if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
       this.emit({ type: "user", text: msg.text });
       this.promptHandler?.(msg.text.trim());

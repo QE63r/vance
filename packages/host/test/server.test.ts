@@ -47,6 +47,29 @@ function makeServer(options: Omit<HostOptions, "historyFile"> & { historyFile?: 
   return new HostServer({ ...options, historyFile: options.historyFile ?? historyFile() });
 }
 
+/** 等一条满足条件的消息（不关连接，用来测中途切换） */
+function waitForMessage(ws: WebSocket, predicate: (m: any) => boolean, ms = 3000): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off("message", onMessage);
+      reject(new Error("timeout waiting message"));
+    }, ms);
+    const onMessage = (raw: unknown) => {
+      let m: any;
+      try {
+        m = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      if (!predicate(m)) return;
+      clearTimeout(timer);
+      ws.off("message", onMessage);
+      resolve(m);
+    };
+    ws.on("message", onMessage);
+  });
+}
+
 /** 连上并把收到的消息收进数组，直到满足条件或超时 */
 function listen(
   port: number,
@@ -488,5 +511,52 @@ describe("审计与产出", () => {
 
     const after = (await (await fetch(`http://127.0.0.1:${port}/rules`)).json()) as any;
     expect(after.rules).toEqual(["new-item|desktop"]);
+  });
+});
+
+describe("切会话（session/attach）", () => {
+  it("切到 legacy 只回它的流水，切回来只回当前会话的", async () => {
+    const file = historyFile();
+    writeFileSync(file, JSON.stringify({ type: "chat", role: "agent", messageId: "old", text: "旧消息" }) + "\n");
+
+    server = makeServer({ port: 0, token: "at1", pagePath: PAGE, approveAllDevices: true, historyFile: file });
+    server.useSession("ses_live", "live");
+    const { port } = await server.start();
+    server.broadcastChat("m1", "新消息");
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=at1&device=dev-at`);
+    await new Promise((r) => ws.on("open", r));
+
+    const legacy = waitForMessage(ws, (m) => m.type === "history" && m.session_id === "legacy");
+    ws.send(JSON.stringify({ type: "session/attach", sessionId: "legacy" }));
+    const oldHistory = await legacy;
+    expect(oldHistory.items[0].text).toBe("旧消息");
+
+    const live = waitForMessage(ws, (m) => m.type === "history" && m.session_id === "ses_live");
+    ws.send(JSON.stringify({ type: "session/attach", sessionId: "ses_live" }));
+    const newHistory = await live;
+    expect(newHistory.items[0].text).toBe("新消息");
+    ws.close();
+  });
+
+  it("切到不存在的会话只给 notice，不静默切换", async () => {
+    server = makeServer({ port: 0, token: "at2", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_live", "live");
+    const { port } = await server.start();
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=at2&device=dev-at`);
+    await new Promise((r) => ws.on("open", r));
+
+    const sessions: any[] = [];
+    ws.on("message", (raw) => {
+      const m = JSON.parse(String(raw));
+      if (m.type === "session") sessions.push(m);
+    });
+    const notice = waitForMessage(ws, (m) => m.type === "notice");
+    ws.send(JSON.stringify({ type: "session/attach", sessionId: "nope" }));
+    const n = await notice;
+    expect(n.text).toContain("nope");
+    expect(sessions).toHaveLength(0);
+    ws.close();
   });
 });

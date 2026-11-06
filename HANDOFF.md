@@ -94,8 +94,8 @@
 
 | 项 | 现状 |
 |---|---|
-| **真前端** | 第一屏（会话视图）已落地 `packages/web`；列表屏 / 设置屏 / 会话切换没做 |
-| 多会话（分装/切换） | 没做；目前一次只跑一个会话；`session_id` 还没进协议 |
+| **真前端** | 会话视图 + `⋯` 菜单（任务列表 / 切换 / 规则撤销）已落地；独立设置屏、路由、列表徽标没做 |
+| 多会话（分装/切换） | 协议与最小切换已做（单执行、可看别条）；create / stop / 独立列表屏没做 |
 | 点击 / 打字 | 没做；卡在对话框上还得回工位 |
 | 加密 | 无；明文到 Funnel |
 | 多电脑 / 多用户 | 没做 |
@@ -103,9 +103,9 @@
 
 ## 6. 下一步（已定）
 
-**第一屏（会话视图）+ 接真 host + 会话身份 + 审计与产出都已完成。**
+**第一屏（会话视图）+ 接真 host + 会话身份 + 审计与产出 + 任务列表都已完成。**
 取舍见 `adr/0006-frontend-first-screen.md`、`adr/0007-host-static-hosting.md`、
-`adr/0008-session-identity.md`、`adr/0009-audit-and-artifacts.md`。
+`adr/0008-session-identity.md`、`adr/0009-audit-and-artifacts.md`、`adr/0010-session-list-ui.md`。
 
 做完了什么：
 
@@ -119,21 +119,26 @@
   `WS ?session=` 回放；旧流水归 `legacy`（只读）；未知 id 给解释不静默切换
 - ~~审计与产出~~：`decision` 广播并落流水（谁、何时、批/拒）、`artifacts` 结构化
   （added / changed / removed / warnings）、`GET /rules` + 撤销、`hello.server_time`
-- 测试基线从 100 → 106 → 112 → **116 passed**（host 23 条）
+- ~~任务列表~~：顶栏 `⋯` → 任务列表（点着切换，`session/attach`，不重连）、
+  记住的规则（列表 + 撤销）；切换只改"看哪条"，不停正在跑的任务
+- 测试基线从 100 → 106 → 112 → 116 → **120 passed**（host 25 条，web 6 条）
 
 下一步按这个顺序：
 
 1. ~~接真 host~~（已完成，卡见 `docs/task-host-static.md`）
 2. ~~后端 P0~~（已完成）：~~卡 1 会话身份~~（`docs/task-session-id.md`）→
    ~~卡 2 审计与产出~~（`docs/task-audit-artifacts.md`）
-3. 再补**列表屏 / 设置屏 / 会话切换**（设计稿 §2.2、§2.4、§3.5）——下一张
+3. ~~列表 / 切换~~（最小版已完成：`⋯` 菜单，卡见 `docs/task-session-list.md`）；
+   独立设置屏、列表徽标、路由仍未做
+4. 接下来二选一：**token 从 query 挪到 hash**，或清「体验债」（见下）
 
 token 从 `?token=` 挪到 hash 仍单独一张卡（要动二维码 / 启动器 / 文档）。
 
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
 
-下一张卡：卡 3「列表屏 / 设置屏 / 会话切换」；还没落文件。
-`session/attach` 消息、S 轴、规则列表 UI 都并进这张。
+下一张卡二选一：**token hash**（要动二维码/启动器/文档），或清体验债——
+提交中无超时回退、状态灯术语、拦截文案、180s 提示、规则 key 人话化。
+`session/attach` 与 S 轴已在 `docs/task-session-list.md` 这张里落地。
 
 判定标准：**画得出来 = 想清楚了；画不出来就先别写代码。**
 
