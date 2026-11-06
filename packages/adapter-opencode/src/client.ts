@@ -18,6 +18,8 @@ export interface ClientOptions {
   command?: string;
   /** 参数，默认 ["acp"] */
   args?: string[];
+  /** 要恢复的会话 id；传了就先试 session/load */
+  resumeId?: string;
   /** 时钟，注入以便测试 */
   now?: () => number;
 }
@@ -54,6 +56,7 @@ export class AcpClient {
   ) {
     this.opts = {
       cwd: options.cwd,
+      resumeId: options.resumeId ?? "",
       projectId: options.projectId ?? "default",
       command: options.command ?? "opencode",
       args: options.args ?? ["acp"],
@@ -183,11 +186,38 @@ export class AcpClient {
       }
 
       if (msg.error) {
+        // session/load 不支持或会话没了 → 退回开新会话，不能卡死
+        if (this.opts.resumeId && this.sessionId === null) {
+          this.log("[acp] 恢复失败，改为新建会话");
+          this.opts.resumeId = "";
+          this.send({
+            jsonrpc: "2.0",
+            id: this.nextId++,
+            method: "session/new",
+            params: { cwd: this.opts.cwd, mcpServers: [] },
+          });
+          return;
+        }
         this.onSessionFailed?.(new Error(JSON.stringify(msg.error)));
         return;
       }
       const result = msg.result ?? {};
       if (this.sessionId === null && result.agentInfo) {
+        // 有旧会话就先试着接上——接得上，Agent 就记得之前聊过什么
+        if (this.opts.resumeId) {
+          this.log(`[acp] 尝试恢复会话 ${this.opts.resumeId}`);
+          this.send({
+            jsonrpc: "2.0",
+            id: this.nextId++,
+            method: "session/load",
+            params: {
+              sessionId: this.opts.resumeId,
+              cwd: this.opts.cwd,
+              mcpServers: [],
+            },
+          });
+          return;
+        }
         this.send({
           jsonrpc: "2.0",
           id: this.nextId++,
