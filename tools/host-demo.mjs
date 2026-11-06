@@ -38,7 +38,18 @@ const token = (() => {
 
 /** 等待人决定的请求：request_id → 回给 Agent 的函数 */
 const pending = new Map();
-const repeatCount = new Map(); // 同一条动作被要求的次数（防死循环）
+const repeatCount = new Map();
+// 本轮已授权的"同类操作"：key = 动词|目录。轮次结束就清空。
+const turnGrants = new Set();
+
+/** 把一条命令归成"同类"：动词 + 目录 */
+function grantKey(event) {
+  const action = String(event.action_display ?? "");
+  const verb = (action.match(/\b(Get-ChildItem|New-Item|Move-Item|Copy-Item|Remove-Item|Set-Content|Out-File|Export-Csv|Rename-Item)\b/i)?.[1] ?? "other").toLowerCase();
+  const facts = event.facts ?? {};
+  const dir = String(facts.locations ?? facts.files ?? "").split("\\").slice(0, -1).join("\\").toLowerCase();
+  return `${verb}|${dir}`;
+} // 同一条动作被要求的次数（防死循环）
 const RULES = join(homedir(), ".vance", "rules.json");
 const remembered = (() => {
   try { return JSON.parse(readFileSync(RULES, "utf8")).allow ?? []; } catch { return []; }
@@ -118,6 +129,11 @@ host.onDecision(({ requestId, decision, by }) => {
     remembered.push(entry.key);
     saveRules();
     console.log(`  ★ 已记住：${entry.key.slice(0, 60)}`);
+  }
+  if (decision !== "reject" && entry.event) {
+    const gk = grantKey(entry.event);
+    turnGrants.add(gk);
+    console.log(`  ★ 本轮已允许同类：${gk}`);
   }
   entry.reply(decision === "remember" ? "allow" : decision);
   pending.delete(requestId);
@@ -336,8 +352,10 @@ const client = new AcpClient(
         return;
       }
 
-      // 判定顺序：禁止 → 记住 → 只读 → 问人
+      // 判定顺序：禁止 → 记住 → 本轮授权 → 只读 → 问人
       const verdict = classifyApproval(event, remembered);
+      const gk = grantKey(event);
+      const granted = turnGrants.has(gk);
 
       if (verdict.deny) {
         console.log(`  ⛔ 拦截（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
@@ -357,7 +375,14 @@ const client = new AcpClient(
       const note = explainAction(String(event.action_display ?? ""));
       if (note) host.broadcastNotice("deny", "⚠ " + note);
 
-      pending.set(event.request_id, { reply, key: treatKey(event) });
+      if (granted) {
+        console.log(`  · 本轮已允许同类（${gk}）：${String(event.action_display).slice(0, 40)}`);
+        host.broadcastNotice("auto", `本轮已允许同类操作：${String(event.action_display).slice(0, 40)}`);
+        reply("allow");
+        return;
+      }
+
+      pending.set(event.request_id, { reply, key: treatKey(event), event });
       host.broadcast(event);
       console.log("");
       console.log("  ⚠ 已推送到手机：" + event.action_display);
@@ -388,6 +413,8 @@ host.onPrompt(async (text) => {
   running = true;
   host.broadcastTurn("running");
   console.log("\n  ▶ 手机指令：" + text);
+
+  turnGrants.clear();
 
   // 拍快照：工作目录 + 桌面（东西多半往这两处放）
   const watchDirs = [CWD, join(homedir(), "Desktop")].filter((d) => existsSync(d));
