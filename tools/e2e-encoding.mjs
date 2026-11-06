@@ -12,7 +12,7 @@ let done = false;
 
 ws.onopen = () => {
   setTimeout(() => {
-    ws.send(JSON.stringify({ type: "prompt", text: "列出桌面上的文件，只回答文件名" }));
+    ws.send(JSON.stringify({ type: "prompt", text: process.argv[3] || "列出桌面上的文件，只回答文件名" }));
   }, 800);
 };
 
@@ -39,4 +39,4 @@ const timer = setInterval(() => {
   if (done) { clearInterval(timer); setTimeout(finish, 500); }
 }, 500);
 
-setTimeout(() => { clearInterval(timer); finish(); }, 90000);
+setTimeout(() => { clearInterval(timer); finish(); }, 240000);
