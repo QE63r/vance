@@ -231,6 +231,14 @@ export class AcpClient {
         this.onSessionReady?.(result.sessionId);
         return;
       }
+
+      // session/load 成功，但返回体不一定带 sessionId（不同版本有差异）。
+      // 我们请求的就是这个 id，没有 error 就算接上了，否则 start() 永远不返回。
+      if (this.sessionId === null && this.opts.resumeId) {
+        this.sessionId = String(result.sessionId ?? this.opts.resumeId);
+        this.onSessionReady?.(this.sessionId);
+        return;
+      }
       // 其余响应视为"这一轮结束"
       this.settled?.(String(result.stopReason ?? "end_turn"));
       this.settled = null;
