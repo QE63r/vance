@@ -67,8 +67,6 @@ export function boot(): void {
   // 先读会话再读 token：readToken 会立刻清掉整个查询串
   const session = readSession();
   const token = readToken();
-  // 会话编号留在地址栏：刷新不该丢掉"我在看哪条"
-  if (session) history.replaceState(null, "", `${location.pathname}?session=${encodeURIComponent(session)}`);
 
   const connect = (): void => {
     store.dispatch({ type: "connect" });

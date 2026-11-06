@@ -193,7 +193,13 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         replaying: true,
       };
       for (const item of msg.items) next = reduce(next, { type: "msg", msg: item, replay: true });
-      return { ...next, replaying: false, link: { phase: "ready", attempts: 0 } };
+      return {
+        ...next,
+        replaying: false,
+        link: { phase: "ready", attempts: 0 },
+        // 回放完还没有任何"轮"的消息（空会话 / 旧账）：等同于空闲
+        exec: next.exec.phase === "unknown" ? { phase: "idle" } : next.exec,
+      };
     }
 
     case "event":
