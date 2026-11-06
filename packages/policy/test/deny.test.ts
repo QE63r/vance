@@ -16,6 +16,15 @@ describe("禁止清单不该误伤", () => {
     expect(v).toBeNull();
   });
 
+  it("2>&1 只是合并输出流，同样不算写系统目录", () => {
+    const v = checkDeny({
+      action_display:
+        '$soffice="C:\\Program Files\\LibreOffice\\program\\soffice.exe"; & $soffice --headless --convert-to docx --outdir "C:\\Users\\1\\Desktop" "C:\\Users\\1\\AppData\\Local\\Temp\\a.html" 2>&1',
+      facts: { kind: "execute", files: "C:\\Program Files\\LibreOffice\\program\\soffice.exe" },
+    });
+    expect(v).toBeNull();
+  });
+
   it("但真的往系统目录写，仍然禁止", () => {
     const v = checkDeny({
       action_display: 'Copy-Item a.txt "C:\\Program Files\\evil.txt"',

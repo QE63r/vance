@@ -70,7 +70,8 @@ const KILL_VERB = /(stop-process|taskkill|\bkill\b|\bkillall\b)/i;
 const CRITICAL_PROC = /\b(winlogon|csrss|dwm|lsass|services|smss|wininit)\b/i;
 
 /** 看起来像"会写"的命令动词，用来决定路径禁令是否适用 */
-const WRITE_VERB = /(remove-item|\bdel\b|\brm\b|\bmove\b|\bmv\b|\bcopy\b|\bset-content\b|\bout-file\b|\bnew-item\b|\badd-content\b|>\s*)/i;
+const WRITE_VERB =
+  /(remove-item|\bdel\b|\brm\b|\bmove\b|\bmv\b|\bcopy\b|\bset-content\b|\bout-file\b|\bnew-item\b|\badd-content\b|>\s*(?!&))/i;
 
 /** 检查是否命中永久禁止 */
 export function checkDeny(event: {
@@ -92,9 +93,11 @@ export function checkDeny(event: {
   }
 
   // 路径禁令只对"写"生效：读系统目录、运行系统目录里的程序都是正常需求。
-  // `> $null` 是丢弃输出，不是写文件——不算写操作（否则调用
+  // `> $null` / `2>&1` 是重定向到流，不是写文件——不算写操作（否则调用
   // C:\Program Files 下的转换工具会被误判成"写系统目录"）。
-  const normalized = action.replace(/\d?>\s*\$null/gi, " ");
+  const normalized = action
+    .replace(/\d?>\s*&\s*\d/gi, " ")
+    .replace(/\d?>\s*\$null/gi, " ");
   const isWrite = kind === "edit" || (kind === "execute" && WRITE_VERB.test(normalized));
   if (isWrite) {
     for (const [re, why] of DENY_PATH) {

@@ -401,12 +401,20 @@ try {
   if (saved?.id) resumeId = String(saved.id);
 } catch {}
 
+// 「多久没新进展才算卡住」：每来一条步骤/一句话就重置，不能从开跑一直计时
+let progressTimer = null;
+let bumpProgress = () => {};
+
 const client = new AcpClient(
   { cwd: CWD, projectId: "sandbox", resumeId },
   {
-    onChat: (messageId, text) => host.broadcastChat(messageId, text),
+    onChat: (messageId, text) => {
+      host.broadcastChat(messageId, text);
+      bumpProgress();
+    },
     onStep: (event) => {
       host.broadcast(event);
+      bumpProgress();
       const s = event.step?.status ?? "pending";
       const mark = { pending: "○", running: "●", done: "✓", failed: "✗" }[s];
       console.log(`  ${mark} ${event.step?.title}`);
@@ -499,17 +507,24 @@ host.onPrompt(async (text) => {
   const before = new Map();
   for (const d of watchDirs) for (const [k, v] of snapshot(d)) before.set(k, v);
   try {
-    const watchdog = setTimeout(() => {
-      console.log("  \u26a0 120 秒无进展，判定为卡住");
-      host.broadcastNotice("deny", "这一步超过 180 秒没有进展，已放开输入");
-      host.broadcastTurn("stopped");
-      running = false;
-    }, 180_000);
-    const r = await client.runTurn(text).finally(() => clearTimeout(watchdog));
+    bumpProgress = () => {
+      if (!running) return;
+      clearTimeout(progressTimer);
+      progressTimer = setTimeout(() => {
+        console.log("  ⚠ 180 秒没有新进展，判定为卡住");
+        host.broadcastNotice("deny", "180 秒没有新进展，已放开输入");
+        host.broadcastTurn("stopped");
+        running = false;
+      }, 180_000);
+    };
+    bumpProgress();
+    const r = await client.runTurn(text);
     console.log("  本轮结束：" + r);
   } catch (err) {
     console.log("  出错：" + String(err));
   } finally {
+    clearTimeout(progressTimer);
+    progressTimer = null;
     const stopped = !running; // 被停止/强杀的轮次不做产出判定
     if (!stopped) {
       const after = new Map();
