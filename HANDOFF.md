@@ -112,11 +112,14 @@
 
 下一步按这个顺序：
 
-1. 接真 host：`packages/host` 加 `/app/*` 静态托管；token 也从 `?token=` 挪到 hash
+1. 接真 host：`packages/host` 加 `/app/*` 静态托管（卡：`docs/task-host-static.md`）
+   token 从 `?token=` 挪到 hash 单独一张卡（要动二维码 / 启动器 / 文档）
 2. 后端 P0：消息带 `session_id`、`sessions` 接口、`artifacts` 结构化、`decision` 广播、`rules` 撤销
 3. 再补列表屏 / 设置屏 / 会话切换（设计稿 §2.2、§2.4、§3.5）
 
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
+
+下一张卡已落文件：`docs/task-host-static.md`（含复述要求、测试基线、回滚点）。
 
 判定标准：**画得出来 = 想清楚了；画不出来就先别写代码。**
 
