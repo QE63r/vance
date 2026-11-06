@@ -1,9 +1,11 @@
 ﻿// 把三块接起来：Host 网页 + ACP Agent + 决定回传。
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HostServer } from "../packages/host/dist/index.js";
+import { HostServer, lanEntries } from "../packages/host/dist/index.js";
+import qrcode from "qrcode-terminal";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
@@ -62,13 +64,24 @@ host.onDecision(({ requestId, decision }) => {
 
 const { port, urls } = await host.start();
 
+// 挑一张「真实」的网卡：优先 WLAN / Wi-Fi / 以太网，跳过虚拟网卡
+const entries = lanEntries(port);
+const real =
+  entries.find((e) => /Wi-?Fi|WLAN|以太网|Ethernet/i.test(e.iface) && !/vEthernet|Loopback/i.test(e.iface)) ??
+  entries[0];
+
+const url = `${real ? real.url : `http://127.0.0.1:${port}`}/?token=${token}`;
+
 console.log("");
 console.log("  梵境 · 等待手机连接");
 console.log("  ────────────────────────────────────────");
-for (const u of urls) console.log(`  ${u}/?token=${token}`);
-if (urls.length === 0) console.log(`  http://127.0.0.1:${port}/?token=${token}`);
+if (real) console.log(`  网卡：${real.iface}  地址：${real.address}`);
+console.log("");
+qrcode.generate(url, { small: true });
+console.log("");
+console.log(`  ${url}`);
 console.log("  ────────────────────────────────────────");
-console.log(`  口令：${token}（只在本次运行有效）`);
+console.log("  手机扫码，或手动输入上面的地址");
 console.log("");
 
 const client = new AcpClient(
@@ -144,6 +157,27 @@ host.onPrompt(async (text) => {
   } finally {
     running = false;
     host.broadcastTurn("idle");
+  }
+});
+
+host.onScreenshot(async () => {
+  const out = join(HERE, "..", ".shot.jpg");
+  try {
+    await new Promise((resolve, reject) => {
+      const ps = spawn(
+        "powershell",
+        ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screenshot.ps1"), "-Out", out],
+        { stdio: "ignore" },
+      );
+      ps.on("exit", (code) => (code === 0 ? resolve() : reject(new Error("screenshot exit " + code))));
+      ps.on("error", reject);
+    });
+    const buf = readFileSync(out);
+    console.log(`  \u{1F5BC} 截图 ${Math.round(buf.length / 1024)} KB`);
+    return "data:image/jpeg;base64," + buf.toString("base64");
+  } catch (err) {
+    console.log("  截图失败：" + String(err));
+    return null;
   }
 });
 
