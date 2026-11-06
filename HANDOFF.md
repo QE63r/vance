@@ -83,10 +83,12 @@
     采集事实的代码同样需要被验证。
 15. **两个会话同时改同一个仓库会互相踩**：提交前看 `git status`，
     别把另一个会话的半成品一起提交。
-16. **history 是全局一条流水，且过滤掉了审批请求**：不分会话。
-    做「切会话」之前必须先补 `session_id`，否则两条会话的流水会串。
+16. **审批请求不进 history**：它们该以 pending 形式单独补发；重放旧审批会像「现在要你批」。
+    已按 `session_id` 过滤，只补给同一条会话。
 17. **Windows 上 Vite 会盯 mock 的临时文件**：编辑器写 `mock/host.mjs` 时 `EBUSY` 会让 dev 直接退出。
     已在 `vite.config.ts` 里 `watch.ignored` 掉 `mock/**` 和 `*.tmpdir/**`。
+18. **`session/load` 成功不一定带 `sessionId`**：不兜底就会卡在启动（`start()` 永不返回，
+    页面连上却没有"当前会话"）。adapter 现在用请求的 id 补上。
 
 ## 5. 半成品 / 没做的
 
