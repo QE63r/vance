@@ -70,6 +70,56 @@ host.onDecision(({ requestId, decision }) => {
 
 const { port, urls } = await host.start();
 
+// ── 实时画面：有手机连着才抓屏，没人看就停（不白烧 CPU） ──
+let streamer = null;
+let lastHash = "";
+let streamWatch = null;
+
+function startStreamer() {
+  if (streamer) return;
+  streamer = spawn(
+    "powershell",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screen-stream.ps1"),
+     "-Fps", "2", "-Width", "800", "-Quality", "45"],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
+  console.log("  ▶ 实时画面已开启（2 fps）");
+
+  let buf = Buffer.alloc(0);
+  streamer.stdout.on("data", (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    while (buf.length >= 4) {
+      const len = buf.readUInt32LE(0);
+      if (len <= 0 || len > 4_000_000) { buf = Buffer.alloc(0); return; }
+      if (buf.length < 4 + len) break;
+      const frame = buf.subarray(4, 4 + len);
+      buf = buf.subarray(4 + len);
+
+      // 画面没变就不发：静态桌面几乎不占流量
+      const hash = createHash("sha1").update(frame).digest("hex");
+      if (hash === lastHash) continue;
+      lastHash = hash;
+
+      host.broadcastFrame(Buffer.from(frame));
+    }
+  });
+  streamer.on("exit", () => { streamer = null; });
+}
+
+function stopStreamer() {
+  if (!streamer) return;
+  try { streamer.kill(); } catch {}
+  streamer = null;
+  lastHash = "";
+  console.log("  ⏸ 没人看，实时画面已暂停");
+}
+
+streamWatch = setInterval(() => {
+  if (host.deviceCount > 0) startStreamer();
+  else stopStreamer();
+}, 3000);
+
+
 // 挑一张「真实」的网卡：优先 WLAN / Wi-Fi / 以太网，跳过虚拟网卡
 const entries = lanEntries(port);
 const real =
