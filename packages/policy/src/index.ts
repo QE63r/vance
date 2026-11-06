@@ -54,14 +54,14 @@ const DENY_COMMAND: Array<[RegExp, string]> = [
 
 /** 这些路径上的"写"操作一律禁止（读不受影响） */
 const DENY_PATH: Array<[RegExp, string]> = [
-  [/c:\\windows\\/i, "系统目录"],
-  [/c:\\program files/i, "系统程序目录"],
-  [/c:\\programdata/i, "系统数据目录"],
-  [/\\\.ssh\\/i, "SSH 凭据"],
-  [/\\\.aws\\/i, "云凭据"],
-  [/\\\.config\\opencode/i, "Agent 自身配置"],
-  [/(id_rsa|id_ed25519|\.pem)$/i, "私钥文件"],
-  [/^[a-z]:\\?$/i, "磁盘根目录"],
+  [/c:\\windows\\/i, "不能写 Windows 系统目录"],
+  [/c:\\program files/i, "不能往 Program Files 里写文件"],
+  [/c:\\programdata/i, "不能往 ProgramData 里写文件"],
+  [/\\\.ssh\\/i, "不能动 SSH 密钥目录"],
+  [/\\\.aws\\/i, "不能动云凭据目录"],
+  [/\\\.config\\opencode/i, "不能改 Agent 自己的配置"],
+  [/(id_rsa|id_ed25519|\.pem)$/i, "不能动私钥文件"],
+  [/^[a-z]:\\?$/i, "不能直接操作整个磁盘根目录"],
 ];
 
 /** 结束进程的动作 */
@@ -101,7 +101,7 @@ export function checkDeny(event: {
   const isWrite = kind === "edit" || (kind === "execute" && WRITE_VERB.test(normalized));
   if (isWrite) {
     for (const [re, why] of DENY_PATH) {
-      if (re.test(haystack)) return DENY(`${why}：不可写入`);
+      if (re.test(haystack)) return DENY(why);
     }
   }
 

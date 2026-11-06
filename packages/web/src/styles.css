@@ -945,3 +945,5 @@ button:disabled {
   width: 64px;
   height: 32px;
 }
+
+.card-error { margin-top: 6px; color: #fca5a5; font-size: 12px; }

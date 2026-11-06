@@ -31,6 +31,8 @@ export interface ApprovalEntry {
   by?: string;
   decision?: Decision;
   at?: number;
+  /** 提交后没等到回执：就地提示，让人重试 */
+  error?: string;
 }
 
 export type TimelineItem =
@@ -78,6 +80,7 @@ export type Action =
   | { type: "msg"; msg: ServerMsg; replay?: boolean }
   | { type: "tick"; now: number }
   | { type: "decide"; requestId: string; decision: Decision }
+  | { type: "decide-timeout"; requestId: string }
   | { type: "device-decided"; deviceId: string };
 
 const MAX_ITEMS = 400;
@@ -309,8 +312,19 @@ export function reduce(s: State, action: Action): State {
     }
 
     case "decide":
+      return mapApprovals(s, (a) => {
+        if (a.event.request_id !== action.requestId || a.phase !== "offered") return a;
+        const next = { ...a, phase: "submitting" as const, decision: action.decision };
+        delete next.error;
+        return next;
+      });
+
+    case "decide-timeout":
+      // 电脑没回执：退回"可操作"，让人重试，而不是一直转圈
       return mapApprovals(s, (a) =>
-        a.event.request_id === action.requestId && a.phase === "offered" ? { ...a, phase: "submitting", decision: action.decision } : a,
+        a.event.request_id === action.requestId && a.phase === "submitting"
+          ? { ...a, phase: "offered", error: "没收到电脑回执，请重试" }
+          : a,
       );
 
     case "device-decided": {
