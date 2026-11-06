@@ -1,17 +1,22 @@
 # Vance（梵境）
 
-跨生态 Agent 移动控制面。当前处于 **P0 环境搭建** 阶段：只有骨架，没有可用功能。
+跨生态 Agent 移动控制面。当前处于 **P0 收尾**：会话第一屏与真 host 已接通，
+后端 P0（`session_id` / `sessions` / `artifacts` / `decision` 广播 / `rules` 撤销）还没做。
 
 ## 结构
 
 ```
 packages/
-  core/          事件模型（四类事件 + 信封字段 + zod schema）
-  adapter-base/  fail-closed 基类，任何适配器不得绕过
-  adapter-claude/ Claude Code 适配器（P2，尚未实现）
-  relay/         控制面网关（P5，尚未实现）
-docs/            event-model / adapter-contract
-adr/             架构决策记录
+  core/              事件模型（四类事件 + 信封字段 + zod schema）
+  adapter-base/      fail-closed 基类，任何适配器不得绕过
+  adapter-opencode/  ACP 适配器（现役，含 session/load 恢复）
+  adapter-claude/    Claude Code 适配器（P2，空壳）
+  policy/            禁止清单 / 只读判定 / 记住规则 / 本轮授权
+  host/              HTTP + WS + 设备配对 + `/app/*` 静态托管
+  web/               真前端（会话第一屏，Vite + React 19）
+  relay/             控制面网关（P5，空壳）
+docs/                event-model / adapter-contract / frontend-ia
+adr/                 架构决策记录（0001–0007）
 ```
 
 ## 命令
@@ -55,8 +60,13 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] workspace、TypeScript、Vitest、Turbo 跑通
 - [x] core：信封 11 字段 + 四类事件的 zod schema + 快照测试
 - [x] adapter-base：fail-closed 的默认拒绝路径 + 单测
-- [x] git 仓库初始化，首次提交完成
-- [ ] 真实策略引擎（Deny > Approval > Allow 的完整规则）
+- [x] adapter-opencode：ACP 适配器 + session/load 恢复
+- [x] policy：禁止清单、只读判定、记住规则、本轮授权
+- [x] host：WS、设备配对、审批补发、`/app/*` 静态托管
+- [x] web：会话第一屏（四轴状态机 + 断线重连），构建产物由 host 托管
+- [x] `pnpm test`：106 passed / 0 failed
+- [ ] 后端 P0：`session_id`、`sessions`、`artifacts` 结构化、`decision` 广播、`rules` 撤销
+- [ ] 列表屏 / 设置屏 / 会话切换；token 从 query 挪到 hash
 - [ ] adapter-claude / relay
 
 ## 环境备注
