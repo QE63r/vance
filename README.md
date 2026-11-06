@@ -1,7 +1,9 @@
 # Vance（梵境）
 
-跨生态 Agent 移动控制面。当前处于 **P0 收尾**：会话第一屏与真 host 已接通，
-后端 P0（`session_id` / `sessions` / `artifacts` / `decision` 广播 / `rules` 撤销）还没做。
+跨生态 Agent 移动控制面。P0 已收口：会话视图、审批、审计、产出、任务列表、
+事实契约都已接通；下一张是交付物检阅。
+
+> 项目构想与计划书：[docs/product-plan.md](docs/product-plan.md)
 
 ## 结构
 
@@ -58,16 +60,15 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 ## 现在的状态
 
 - [x] workspace、TypeScript、Vitest、Turbo 跑通
-- [x] core：信封 11 字段 + 四类事件的 zod schema + 快照测试
+- [x] core：信封 11 字段 + 四类事件 + facts v1（含 `string[]`）
 - [x] adapter-base：fail-closed 的默认拒绝路径 + 单测
-- [x] adapter-opencode：ACP 适配器 + session/load 恢复
-- [x] policy：禁止清单、只读判定、记住规则、本轮授权
-- [x] host：WS、设备配对、审批补发、`/app/*` 静态托管
-- [x] web：会话第一屏（四轴状态机 + 断线重连），构建产物由 host 托管
-- [x] `pnpm test`：106 passed / 0 failed
-- [ ] 后端 P0：`session_id`、`sessions`、`artifacts` 结构化、`decision` 广播、`rules` 撤销
-- [ ] 列表屏 / 设置屏 / 会话切换；token 从 query 挪到 hash
-- [ ] adapter-claude / relay
+- [x] adapter-opencode：ACP 适配器、session/load 恢复、命令方言 → facts
+- [x] policy：只读 facts；禁止/记住/只读/问人；不解析命令文本
+- [x] host：WS、设备配对、审批补发、`/app/*`、会话、审计、`/rules`
+- [x] web：会话第一屏、`⋯` 任务列表/切换、规则撤销、断线重连
+- [x] `pnpm test`：114 passed / 0 failed
+- [ ] 交付物检阅（`docs/task-artifact-review.md`，下一张）
+- [ ] token 从 query 挪到 hash；桌面审批接管；adapter-claude / relay
 
 ## 环境备注
 
