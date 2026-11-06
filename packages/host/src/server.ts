@@ -190,7 +190,7 @@ export class HostServer {
   private loadHistory(): void {
     try {
       if (!existsSync(this.historyFile)) return;
-      const lines = readFileSync(this.historyFile, "utf8").split("\n").filter(Boolean).slice(-2000);
+      const lines = readFileSync(this.historyFile, "utf8").split("\n").filter(Boolean).slice(-20000);
       for (const line of lines) {
         try {
           const parsed = JSON.parse(line) as unknown;
@@ -199,9 +199,37 @@ export class HostServer {
           this.touch(entry.session_id);
         } catch {}
       }
+      this.mergeChatChunks();
       this.trimHistory();
       console.log(`[host] 恢复历史 ${this.history.length} 条（${this.sessions.size} 条会话）`);
     } catch {}
+  }
+
+  /**
+   * 流式 chat 是"传输细节"：一条回复会被拆成几十个片段。
+   * 若每个片段都算一条历史，400 条上限会把一次对话从中间切断。
+   * 这里把同一 messageId 的连续片段并回一条（只在内存里；落盘仍是追加）。
+   */
+  private mergeChatChunks(): void {
+    const out: HistoryEntry[] = [];
+    for (const entry of this.history) {
+      const prev = out[out.length - 1];
+      const m = entry.msg as any;
+      const p = prev?.msg as any;
+      if (
+        prev &&
+        prev.session_id === entry.session_id &&
+        m?.type === "chat" &&
+        p?.type === "chat" &&
+        p.messageId === m.messageId
+      ) {
+        p.text = String(p.text ?? "") + String(m.text ?? "");
+        continue;
+      }
+      out.push(entry);
+    }
+    this.history.length = 0;
+    this.history.push(...out);
   }
 
   /** 记住一条会话并刷新它的 updated_at；标题只由启动器给，host 不猜 */
@@ -299,7 +327,17 @@ export class HostServer {
 
     // 会话就绪前的系统消息不落流水：它们不属于任何会话，回放出来只会让人困惑
     if (sid !== UNASSIGNED_SESSION) {
-      this.history.push({ session_id: sid, msg: tagged });
+      const last = this.history[this.history.length - 1];
+      const m = tagged as any;
+      const p = last?.msg as any;
+      const sameChat =
+        last &&
+        last.session_id === sid &&
+        m?.type === "chat" &&
+        p?.type === "chat" &&
+        p.messageId === m.messageId;
+      if (sameChat) p.text = String(p.text ?? "") + String(m.text ?? "");
+      else this.history.push({ session_id: sid, msg: tagged });
       this.trimHistory();
       try {
         mkdirSync(dirname(this.historyFile), { recursive: true });

@@ -514,8 +514,7 @@ describe("审计与产出", () => {
   });
 });
 
-describe("切会话（session/attach）", () => {
-  it("切到 legacy 只回它的流水，切回来只回当前会话的", async () => {
+describe("切会话（session/attach）", () => {  it("切到 legacy 只回它的流水，切回来只回当前会话的", async () => {
     const file = historyFile();
     writeFileSync(file, JSON.stringify({ type: "chat", role: "agent", messageId: "old", text: "旧消息" }) + "\n");
 
@@ -558,5 +557,42 @@ describe("切会话（session/attach）", () => {
     expect(n.text).toContain("nope");
     expect(sessions).toHaveLength(0);
     ws.close();
+  });
+});
+
+describe("流式片段不切碎历史", () => {
+  it("同一 messageId 的片段在回放里合并成一条", async () => {
+    server = makeServer({ port: 0, token: "mg1", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_m", "M");
+    const { port } = await server.start();
+
+    server.broadcastChat("m1", "你");
+    server.broadcastChat("m1", "好");
+    server.broadcastChat("m2", "再见");
+
+    const msgs = await listen(port, "mg1", 2, "", 3000, "ses_m");
+    const history = msgs.find((m) => m.type === "history");
+    const chats = history.items.filter((i: any) => i.type === "chat");
+    expect(chats.map((c: any) => c.text)).toEqual(["你好", "再见"]);
+  });
+
+  it("落盘的片段在重启后也会合并", async () => {
+    const file = historyFile();
+    writeFileSync(
+      file,
+      [
+        JSON.stringify({ session_id: "ses_f", msg: { type: "chat", role: "agent", messageId: "m1", text: "你" } }),
+        JSON.stringify({ session_id: "ses_f", msg: { type: "chat", role: "agent", messageId: "m1", text: "好" } }),
+        JSON.stringify({ session_id: "ses_f", msg: { type: "chat", role: "agent", messageId: "m2", text: "再见" } }),
+      ].join("\n") + "\n",
+    );
+
+    server = makeServer({ port: 0, token: "mg2", pagePath: PAGE, approveAllDevices: true, historyFile: file });
+    const { port } = await server.start();
+
+    const msgs = await listen(port, "mg2", 2, "", 3000, "ses_f");
+    const history = msgs.find((m) => m.type === "history");
+    const chats = history.items.filter((i: any) => i.type === "chat");
+    expect(chats.map((c: any) => c.text)).toEqual(["你好", "再见"]);
   });
 });
