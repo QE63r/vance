@@ -21,6 +21,8 @@ import type { AgentEvent } from "@vance/core";
 export type Decision = "allow" | "reject" | "remember";
 
 export interface HostOptions {
+  /** 测试用：跳过设备配对，所有设备直接信任 */
+  approveAllDevices?: boolean;
   /** 端口，0 表示让系统分配 */
   port?: number;
   /** 配对令牌；手机首次连接必须带上 */
@@ -40,9 +42,22 @@ export interface HostOptions {
   task?: string;
 }
 
+/** 一台设备（手机或电脑） */
+interface Device {
+  id: string;
+  name: string;
+  ip: string;
+  at: number;
+  socket: WebSocket;
+  approved: boolean;
+  attached?: boolean;
+}
+
 export interface DecisionRecord {
   requestId: string;
   decision: Decision;
+  /** 是谁点的；审计里必须有这个 */
+  by: string;
 }
 
 type DecisionHandler = (record: DecisionRecord) => boolean;
@@ -70,6 +85,9 @@ export class HostServer {
    * 只放内存：进程没了就没了——这一版不做持久化。
    */
   private readonly history: unknown[] = [];
+
+  /** 已知设备：id → 设备。approved=false 表示还在门口等 */
+  private readonly devices = new Map<string, Device>();
 
   /** 会话流水落盘，重启后还能接上 */
   private readonly historyFile = join(homedir(), ".vance", "history.jsonl");
@@ -189,99 +207,44 @@ export class HostServer {
     this.wss = wss;
 
     wss.on("connection", (socket, req) => {
-      const token = new URL(req.url ?? "/", "http://x").searchParams.get("token") ?? "";
+      const params = new URL(req.url ?? "/", "http://x").searchParams;
+      const token = params.get("token") ?? "";
       if (!this.tokens.has(token)) {
         console.log(`[host] 拒绝连接：口令不对（收到 "${token.slice(0, 12)}"）`);
         socket.close(4001, "bad token");
         return;
       }
-      console.log(`[host] 设备已连接（当前 ${this.clients.size + 1} 台）`);
-      this.clients.add(socket);
-      socket.send(
-        JSON.stringify({
-          type: "hello",
-          project: this.options.projectName ?? "vance",
-          task: this.options.task ?? "",
-        }),
-      );
-      // 补发历史：刷新、换设备、锁屏回来都能接上。
-      // 剔除审批事件：历史里的审批早就作废，重放出来会像「现在要你批」。
-      const past = this.history.filter(
-            (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
-          );
-      if (past.length > 0) {
-        socket.send(JSON.stringify({ type: "history", items: past }));
-      }
-      // 真正还在等决定的，才作为卡片重发
-      for (const pending of this.pendingApprovals.values()) {
-        socket.send(JSON.stringify({ type: "event", event: pending }));
-      }
-      // 待审批的请求已经包含在 history 里，不再单独补发，避免重复
 
-      socket.on("message", (raw) => {
-        let msg: any;
-        try {
-          msg = JSON.parse(String(raw));
-        } catch {
-          return;
-        }
-        // 页面要求重新同步：把权威历史再发一遍，修掉流式渲染可能漏掉的内容
-        if (msg?.type === "resync") {
-          const past = this.history.filter(
-            (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
-          );
-          if (past.length > 0) {
-            socket.send(JSON.stringify({ type: "history", items: past }));
-          }
-          for (const pending of this.pendingApprovals.values()) {
-            socket.send(JSON.stringify({ type: "event", event: pending }));
-          }
-          return;
-        }
-        if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
-          // 用户说的话也要进历史：否则每轮结束对账时，服务端没有这句，
-          // 重绘会把用户气泡抹掉（真实发生过）。
-          this.emit({ type: "user", text: msg.text });
-          this.promptHandler?.(msg.text.trim());
-          return;
-        }
-        if (msg?.type === "stop") {
-          this.stopHandler?.();
-          return;
-        }
-        if (msg?.type === "screenshot") {
-          void (async () => {
-            try {
-              const url = (await this.shotHandler?.()) ?? null;
-              if (url) socket.send(JSON.stringify({ type: "image", dataUrl: url }));
-              else socket.send(JSON.stringify({ type: "notice", level: "deny", text: "截图失败" }));
-            } catch {
-              socket.send(JSON.stringify({ type: "notice", level: "deny", text: "截图失败" }));
-            }
-          })();
-          return;
-        }
-        if (msg?.type !== "decision" || typeof msg.requestId !== "string") return;
-        const decision: Decision =
-          msg.decision === "allow" ? "allow" : msg.decision === "remember" ? "remember" : "reject";
-        const accepted = this.handler?.({ requestId: msg.requestId, decision }) ?? false;
-        if (accepted) {
-          const resolved = this.pendingApprovals.get(msg.requestId) as any;
-          this.pendingApprovals.delete(msg.requestId);
-          // 记一笔：让历史里留下「这件事已经处理过」的痕迹
-          const verb = decision === "reject" ? "已拒绝" : "已批准";
-          this.emit({
-            type: "notice",
-            level: "auto",
-            text: `${verb}：${String(resolved?.action_display ?? "").slice(0, 60)}`,
-          });
-        }
-        socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted }));
-      });
+      const ip = req.socket.remoteAddress ?? "?";
+      const ua = String(req.headers["user-agent"] ?? "");
+      const kind = /iphone|android|mobile/i.test(ua) ? "手机" : "电脑";
+      const deviceId = params.get("device") || `anon-${Math.random().toString(16).slice(2, 10)}`;
 
-      socket.on("close", () => this.clients.delete(socket));
-      socket.on("error", () => this.clients.delete(socket));
+      // 第一台设备自动信任，否则谁都进不来
+      const firstEver =
+        this.options.approveAllDevices === true || ![...this.devices.values()].some((d) => d.approved);
+      const device: Device = this.devices.get(deviceId) ?? {
+        id: deviceId,
+        name: `${kind}-${deviceId.slice(0, 4)}`,
+        ip,
+        at: Date.now(),
+        socket,
+        approved: firstEver,
+      };
+      device.socket = socket;
+      device.attached = false;
+      this.devices.set(deviceId, device);
+
+      if (!device.approved) {
+        // ③ 在门口等着：不给历史、不给画面
+        socket.send(JSON.stringify({ type: "device_pending", name: device.name }));
+        this.askExisting(device);
+        return;
+      }
+
+      this.attach(device);
     });
+
 
     this.http = http;
     return new Promise((resolve) => {
@@ -293,9 +256,157 @@ export class HostServer {
     });
   }
 
+
+  /** ①③ 让已连设备决定要不要放新设备进来 */
+  private askExisting(device: Device): void {
+    for (const d of this.devices.values()) {
+      if (d.approved && d.socket.readyState === d.socket.OPEN) {
+        d.socket.send(
+          JSON.stringify({
+            type: "device_request",
+            deviceId: device.id,
+            name: device.name,
+            ip: device.ip,
+            at: device.at,
+          }),
+        );
+      }
+    }
+  }
+
+  /** 真正把一台设备接进来：发 hello + 历史 + 待办，并挂上消息处理 */
+  private attach(device: Device): void {
+    const socket = device.socket;
+    if (device.attached) return;
+    device.attached = true;
+    this.clients.add(socket);
+
+    console.log(`[host] 设备已连接：${device.name}（${device.ip}，共 ${this.clients.size} 台）`);
+
+    socket.send(
+      JSON.stringify({
+        type: "hello",
+        project: this.options.projectName ?? "vance",
+        task: this.options.task ?? "",
+        device: device.name,
+      }),
+    );
+
+    const past = this.history.filter(
+      (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
+    );
+    if (past.length > 0) socket.send(JSON.stringify({ type: "history", items: past }));
+    for (const pending of this.pendingApprovals.values()) {
+      socket.send(JSON.stringify({ type: "event", event: pending }));
+    }
+
+    // ① 告诉其他设备：又来了一台（看得见才叫可信）
+    for (const d of this.devices.values()) {
+      if (d.approved && d.id !== device.id && d.socket.readyState === d.socket.OPEN) {
+        d.socket.send(
+          JSON.stringify({
+            type: "notice",
+            level: "auto",
+            text: `另一台设备接入：${device.name}（${device.ip}）`,
+          }),
+        );
+      }
+    }
+
+    socket.on("message", (raw) => {
+      let msg: any;
+      try {
+        msg = JSON.parse(String(raw));
+      } catch {
+        return;
+      }
+      this.handleMessage(socket, device, msg);
+    });
+    socket.on("close", () => this.clients.delete(socket));
+    socket.on("error", () => this.clients.delete(socket));
+  }
+
+  private handleMessage(socket: WebSocket, device: Device, msg: any): void {
+    // ③ 已有设备对新设备点头/摇头
+    if (msg?.type === "device_decision" && typeof msg.deviceId === "string") {
+      const target = this.devices.get(msg.deviceId);
+      if (!target) return;
+      if (msg.allow) {
+        target.approved = true;
+        target.socket.send(JSON.stringify({ type: "device_approved" }));
+        this.attach(target);
+        this.emit({
+          type: "notice",
+          level: "auto",
+          text: `已允许接入：${target.name}（${device.name} 批准）`,
+        });
+      } else {
+        this.devices.delete(target.id);
+        try { target.socket.close(4004, "denied"); } catch {}
+        this.emit({
+          type: "notice",
+          level: "deny",
+          text: `已拒绝接入：${target.name}（${device.name} 拒绝）`,
+        });
+      }
+      return;
+    }
+
+    if (msg?.type === "resync") {
+      const past = this.history.filter(
+        (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
+      );
+      if (past.length > 0) socket.send(JSON.stringify({ type: "history", items: past }));
+      for (const pending of this.pendingApprovals.values()) {
+        socket.send(JSON.stringify({ type: "event", event: pending }));
+      }
+      return;
+    }
+    if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
+      this.emit({ type: "user", text: msg.text });
+      this.promptHandler?.(msg.text.trim());
+      return;
+    }
+    if (msg?.type === "stop") {
+      this.stopHandler?.();
+      return;
+    }
+    if (msg?.type === "screenshot") {
+      void (async () => {
+        try {
+          const url = (await this.shotHandler?.()) ?? null;
+          if (url) socket.send(JSON.stringify({ type: "image", dataUrl: url }));
+          else socket.send(JSON.stringify({ type: "notice", level: "deny", text: "截图失败" }));
+        } catch {
+          socket.send(JSON.stringify({ type: "notice", level: "deny", text: "截图失败" }));
+        }
+      })();
+      return;
+    }
+    if (msg?.type !== "decision" || typeof msg.requestId !== "string") return;
+
+    const decision: Decision =
+      msg.decision === "allow" ? "allow" : msg.decision === "remember" ? "remember" : "reject";
+
+    // ② 批准记录里必须带上"是谁点的"
+    const accepted = this.handler?.({ requestId: msg.requestId, decision, by: device.name }) ?? false;
+    if (accepted) {
+      const resolved = this.pendingApprovals.get(msg.requestId) as any;
+      this.pendingApprovals.delete(msg.requestId);
+      const verb = decision === "reject" ? "已拒绝" : "已批准";
+      this.emit({
+        type: "notice",
+        level: "auto",
+        text: `${verb}：${String(resolved?.action_display ?? "").slice(0, 60)}（${device.name}）`,
+      });
+    }
+    socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted }));
+  }
+
   close(): Promise<void> {
     for (const c of this.clients) c.close();
     this.clients.clear();
+    this.devices.clear();
     this.wss?.close();
     return new Promise((resolve) => {
       if (!this.http) return resolve();

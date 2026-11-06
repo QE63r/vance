@@ -187,6 +187,20 @@
 <script>
 (() => {
   const token = new URLSearchParams(location.search).get("token") || "";
+
+  // 设备标识：存在浏览器里，服务端据此判断"这台是不是见过"
+  const deviceId = (() => {
+    try {
+      let d = localStorage.getItem("vance_device");
+      if (!d) {
+        d = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())).replace(/-/g, "").slice(0, 8);
+        localStorage.setItem("vance_device", d);
+      }
+      return d;
+    } catch {
+      return "anon";
+    }
+  })();
   const feed = document.getElementById("feed");
   const projectEl = document.getElementById("project");
   const connEl = document.getElementById("conn");
@@ -429,7 +443,7 @@
   function connect() {
     if (ws && (ws.readyState === 0 || ws.readyState === 1)) return; // 已经在连/已连上
 
-    const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+    const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws?token=${encodeURIComponent(token)}&device=${deviceId}`);
     ws = socket;
 
     // 连接超时：卡在 CONNECTING 的 socket 会挡住后面所有重连，必须主动掐掉
@@ -534,6 +548,44 @@
           if (msg.event?.type === "approval_request") showApproval(msg.event);
           break;
         case "ack": onAck(msg); break;
+        case "device_pending":
+          setConn(false, "等待确认");
+          add("notice deny", `这台设备（${msg.name || "?"}）还没被允许接入，请看已有设备上的提示`);
+          break;
+        case "device_approved":
+          add("notice", "已允许接入，正在载入…");
+          break;
+        case "device_request": {
+          const card = add("card alert");
+          const k = document.createElement("div");
+          k.className = "kicker";
+          k.textContent = "有新设备请求接入";
+          const info = document.createElement("div");
+          info.className = "action";
+          info.textContent = `${msg.name}\n${msg.ip}`;
+          const row = document.createElement("div");
+          row.className = "actions";
+          const no = document.createElement("button");
+          no.className = "deny";
+          no.textContent = "拒绝";
+          const yes = document.createElement("button");
+          yes.className = "allow";
+          yes.textContent = "允许";
+          const v = document.createElement("div");
+          v.className = "verdict";
+          const done = (allow) => {
+            no.disabled = yes.disabled = true;
+            v.textContent = allow ? "已允许" : "已拒绝";
+            if (ws && ws.readyState === 1) {
+              ws.send(JSON.stringify({ type: "device_decision", deviceId: msg.deviceId, allow }));
+            }
+          };
+          no.onclick = () => done(false);
+          yes.onclick = () => done(true);
+          row.append(no, yes);
+          card.append(k, info, row, v);
+          break;
+        }
         case "image": {
           const box = document.createElement("div");
           box.className = "image-msg";
