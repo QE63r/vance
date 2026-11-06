@@ -488,6 +488,7 @@
             showUser(msg.task);
           }
           break;
+        case "user": showUser(msg.text || ""); break;
         case "chat": showAgent(msg.messageId || "msg", msg.text || ""); break;
         case "event":
           if (msg.event?.type === "status_update" && msg.event.step) showStep(msg.event.step);
@@ -555,8 +556,9 @@
       return;
     }
     if (ws && ws.readyState === 1) {
+      // 不在这里画气泡：服务端会把它记进历史再回推过来，
+      // 只留一个来源，避免"本地一份、历史一份"的重影
       ws.send(JSON.stringify({ type: "prompt", text }));
-      showUser(text);
       inputEl.value = "";
       inputEl.style.height = "auto";
       setRunning(true, "running");
