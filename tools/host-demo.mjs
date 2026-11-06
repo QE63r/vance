@@ -111,7 +111,7 @@ const host = new HostServer({
   projectName: "sandbox",
 });
 
-host.onDecision(({ requestId, decision }) => {
+host.onDecision(({ requestId, decision, by }) => {
   const entry = pending.get(requestId);
   if (!entry) return false;
   if (decision === "remember" && entry.key && !remembered.includes(entry.key)) {
@@ -121,7 +121,7 @@ host.onDecision(({ requestId, decision }) => {
   }
   entry.reply(decision === "remember" ? "allow" : decision);
   pending.delete(requestId);
-  console.log(`[host] 手机决定：${decision}（${requestId.slice(0, 12)}…）`);
+  console.log(`[host] 决定：${decision} 来自 ${by ?? "?"}（${requestId.slice(0, 12)}…）`);
   return true;
 });
 
