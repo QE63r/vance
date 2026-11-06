@@ -69,6 +69,9 @@ describe("权限请求 → approval_request", () => {
     expect(r.event.action_display).toContain("Remove-Item");
     expect(r.event.facts.kind).toBe("execute");
     expect(r.event.facts.locations).toContain("sandbox");
+    // 事实层：命令类默认效果未知（要问人），程序名单独给出
+    expect(r.event.facts.effect).toBe("unknown");
+    expect(String(r.event.facts.program).toLowerCase()).toBe("remove-item");
     expect(r.acpId).toBe(7);
   });
 

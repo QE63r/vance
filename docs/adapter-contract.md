@@ -8,6 +8,12 @@
 2. **未知事件必须显式返回 `null`**，由基类转成 `DENY` + `unknown_event`，不许静默丢弃。
 3. **拿不到真实 payload 不算完成**。每个适配器至少要录 8 个真实事件作为 fixture。
 
+## facts 是适配器的产物（ADR-0011）
+
+适配器负责把 Agent 方言翻译成 `facts`：`kind / effect / writes / reads / deletes / program / danger`。
+命令文本的解析（只读判定、危险识别）只能出现在适配器里；策略层只读 facts。
+翻译不出 `effect` 时必须给 `unknown`，让策略问人——不许猜成 read。
+
 ## 生命周期
 
 ```

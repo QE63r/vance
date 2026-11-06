@@ -97,6 +97,15 @@ export const EventEnvelope = z.object({
 export type EventEnvelope = z.infer<typeof EventEnvelope>;
 
 /**
+ * 事实值：判定只认这些，不认 Agent 的命令方言。
+ *
+ * 数组用于"要动哪些路径"（writes / reads / deletes）；
+ * 具体含义见 docs/task-facts-contract.md。
+ */
+export const FactValue = z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]);
+export type FactValue = z.infer<typeof FactValue>;
+
+/**
  * 审批请求。
  *
  * [学习注] strict() = 多出一个我们不认识的字段就判为非法。
@@ -111,12 +120,10 @@ export const ApprovalRequest = EventEnvelope.extend({
    */
   action_display: z.string().min(1),
   /**
-   * 确定性事实层：文件数、行数、是否在 git 跟踪内、是否可恢复……
-   * 不含风险等级（风险由治理层算）。
+   * 确定性事实层：kind / effect / writes / reads / deletes / program / danger。
+   * 由适配器翻译得出；不含风险等级（风险由治理层据此计算）。
    */
-  facts: z
-    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-    .default({}),
+  facts: z.record(z.string(), FactValue).default({}),
   /**
    * 编辑类动作的差异预览。
    *

@@ -1,23 +1,15 @@
 /**
- * 静默放行策略 —— "安静"这两个字的实现。
+ * 风险策略 —— 只读「事实」，不读命令文本。
  *
- * 目标：读操作不再打扰人，写操作照旧要问。
+ * 为什么：命令是 Agent 的方言（shell 动词、重定向、系统路径），解析它属于适配器。
+ * 控制面如果去认这些写法，换一个 Agent 就得重写一遍。
  *
- * 设计原则只有一条：**保守到会误伤，也不能放过任何组合**。
- * 判断的是"整条命令的每一段"，不是开头。
- *   Get-ChildItem; Remove-Item x     → 开头是读，但它删东西
- *   Get-Content a > b                → 读，但重定向会写文件
- *   所以出现分隔符、重定向、子表达式时，逐段检查，任何一段不认识就问人。
+ * 适配器把"要动什么"翻译成 facts：
+ *   kind / effect / writes / reads / deletes / program / danger
+ * 这里只对 facts 做三档：禁止 → 记住 → 只读放行 → 其余问人。
+ *
+ * 文本（action_display）只用于展示，永远不参与判定。
  */
-
-/** 允许静默放行的命令（只读类）。每条都可以带任意参数。 */
-const READ_ONLY = new Set([
-  "get-childitem", "get-content", "get-item", "test-path", "select-string",
-  "measure-object", "select-object", "sort-object", "format-table", "format-list",
-  "where-object", "group-object", "compare-object", "resolve-path", "get-location",
-  "ls", "dir", "cat", "type", "head", "tail", "grep", "rg", "find", "wc",
-  "pwd", "echo", "tree",
-]);
 
 export interface Verdict {
   /** true = 不必打扰人，直接放行 */
@@ -32,27 +24,7 @@ const ASK = (reason: string): Verdict => ({ auto: false, reason });
 const ALLOW = (reason: string): Verdict => ({ auto: true, reason });
 const DENY = (reason: string): Verdict => ({ auto: false, deny: true, reason });
 
-/**
- * 永久禁止：这些不是"要不要问"，是"不允许"。
- *
- * 原则：**不可逆 + 超出项目范围**。
- * 删一个项目里的文件可以重来，格式化磁盘、改系统账户、把密钥传出去不行。
- *
- * 这个列表是硬编码的，不读用户配置——用户不能给自己开后门，
- * 否则"禁止"就退化成了"默认拒绝但可以批"。
- */
-const DENY_COMMAND: Array<[RegExp, string]> = [
-  [/\b(format-volume|clear-disk|diskpart|mkfs)\b/i, "磁盘级操作"],
-  [/\b(shutdown|restart-computer|stop-computer)\b/i, "关机/重启"],
-  [/\bnet\s+user\b|\breg\s+add\s+hklm/i, "修改系统账户或注册表"],
-  [/\bset-executionpolicy\b/i, "修改系统执行策略"],
-  [/\binvoke-expression\b|\biex\b/i, "动态执行代码"],
-  [/\|\s*(sh|bash|zsh)\s*$/i, "下载后直接执行"],
-  [/\b(curl|wget|iwr|invoke-webrequest)\b[^|]*\|\s*(iex|sh|bash)/i, "下载后直接执行"],
-  [/\b(rclone|scp|sftp)\b/i, "向外传输文件"],
-];
-
-/** 这些路径上的"写"操作一律禁止（读不受影响） */
+/** 这些路径上的"写/删"一律禁止（读不受影响）。这是机器边界，不是 Agent 方言。 */
 const DENY_PATH: Array<[RegExp, string]> = [
   [/c:\\windows\\/i, "不能写 Windows 系统目录"],
   [/c:\\program files/i, "不能往 Program Files 里写文件"],
@@ -64,105 +36,54 @@ const DENY_PATH: Array<[RegExp, string]> = [
   [/^[a-z]:\\?$/i, "不能直接操作整个磁盘根目录"],
 ];
 
-/** 结束进程的动作 */
-const KILL_VERB = /(stop-process|taskkill|\bkill\b|\bkillall\b)/i;
-/** 这些进程一杀，系统就出大事 */
-const CRITICAL_PROC = /\b(winlogon|csrss|dwm|lsass|services|smss|wininit)\b/i;
+/** 程序名本身就不该跑（适配器报上来的 program，不是从命令里猜） */
+const DENY_PROGRAM = new Set(["format", "diskpart", "mkfs", "shutdown", "bcdedit"]);
 
-/** 看起来像"会写"的命令动词，用来决定路径禁令是否适用 */
-const WRITE_VERB =
-  /(remove-item|\bdel\b|\brm\b|\bmove\b|\bmv\b|\bcopy\b|\bset-content\b|\bout-file\b|\bnew-item\b|\badd-content\b|>\s*(?!&))/i;
+type Facts = Record<string, unknown>;
 
-/** 检查是否命中永久禁止 */
-export function checkDeny(event: {
-  action_display?: string;
-  facts?: Record<string, unknown>;
-}): Verdict | null {
-  const action = (event.action_display ?? "").trim();
-  const kind = String(event.facts?.kind ?? "unknown");
-  const files = String(event.facts?.files ?? "");
-  const haystack = `${action}\n${files}`;
+function factList(facts: Facts, key: string): string[] {
+  const value = facts[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string");
+}
 
-  for (const [re, why] of DENY_COMMAND) {
-    if (re.test(action)) return DENY(`${why}：永久禁止`);
-  }
+function factString(facts: Facts, key: string, fallback = ""): string {
+  const value = facts[key];
+  return typeof value === "string" ? value : fallback;
+}
 
-  // 杀系统关键进程：会注销、蓝屏或让桌面起不来
-  if (KILL_VERB.test(action) && CRITICAL_PROC.test(action)) {
-    return DENY("结束系统关键进程（会注销或蓝屏）：永久禁止");
-  }
+/** 是否命中永久禁止（只读 facts） */
+export function checkDeny(event: { action_display?: string; facts?: Facts }): Verdict | null {
+  const facts = event.facts ?? {};
 
-  // 路径禁令只对"写"生效：读系统目录、运行系统目录里的程序都是正常需求。
-  // `> $null` / `2>&1` 是重定向到流，不是写文件——不算写操作（否则调用
-  // C:\Program Files 下的转换工具会被误判成"写系统目录"）。
-  const normalized = action
-    .replace(/\d?>\s*&\s*\d/gi, " ")
-    .replace(/\d?>\s*\$null/gi, " ");
-  const isWrite = kind === "edit" || (kind === "execute" && WRITE_VERB.test(normalized));
-  if (isWrite) {
+  // 适配器识别的"永久禁止"类：格式化、关机、外传…
+  const danger = factString(facts, "danger");
+  if (danger) return DENY(`永久禁止：${danger}`);
+
+  // 写/删目标落进机器禁区
+  for (const path of [...factList(facts, "writes"), ...factList(facts, "deletes")]) {
     for (const [re, why] of DENY_PATH) {
-      if (re.test(haystack)) return DENY(why);
+      if (re.test(path)) return DENY(why);
     }
   }
+
+  // 程序名本身
+  const program = factString(facts, "program").toLowerCase();
+  if (program && DENY_PROGRAM.has(program)) return DENY(`不允许执行 ${program}`);
 
   return null;
 }
 
-/** 判断一条 shell 命令能否静默放行 */
-export function classifyCommand(command: string): Verdict {
-  const cmd = command.trim();
-  if (!cmd) return ASK("空命令");
-
-  // 子表达式 / 反引号：里面可以塞任何东西
-  if (cmd.includes("$(") || cmd.includes("`")) return ASK("含子表达式，无法静态判断");
-
-  // 重定向：读命令也能写文件。
-  // 但 `> $null` 是把输出丢掉，不会写任何文件——这种不该问人。
-  const withoutNullSink = cmd.replace(/\d?>\s*\$null/gi, " ");
-  if (/[<>]/.test(withoutNullSink)) return ASK("含重定向");
-
-  // 调用运算符 &（PowerShell 里可以执行任意程序）
-  if (cmd.includes("&")) return ASK("含调用运算符");
-
-  // 拆成若干段：; | 换行 都会接出新命令
-  const segments = cmd
-    .split(/[;|\r\n]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  if (segments.length === 0) return ASK("空命令");
-
-  // 只改「当前这个终端」的设置：编码、shell 变量。
-  // 它们不碰磁盘、不影响别的东西——今天为了读一个中文文件，
-  // Agent 为这类命令连问了七八次，纯噪音。
-  const isShellSetup = (seg: string): boolean =>
-    /^(\$env:[A-Za-z0-9_]+\s*=|\[console\]::(outputencoding|inputencoding)\s*=|chcp(\s|$))/i.test(seg);
-
-  for (const seg of segments) {
-    if (isShellSetup(seg)) continue;
-
-    const parts = seg.split(/\s+/);
-    const head = parts[0]?.toLowerCase() ?? "";
-
-    // git 要单独看子命令：status/diff/log 是只读，commit/push/checkout 不是
-    if (head === "git") {
-      const sub = parts[1]?.toLowerCase() ?? "";
-      if (["status", "diff", "log", "show", "branch", "remote", "rev-parse"].includes(sub)) continue;
-      return ASK(`git ${sub || "(无子命令)"} 不是只读操作`);
-    }
-
-    if (!READ_ONLY.has(head)) {
-      return ASK(`含非只读命令：${head || seg.slice(0, 20)}`);
-    }
-  }
-
-  return ALLOW(segments.length > 1 ? "只读命令（含管道）" : "只读命令");
-}
-
-/** 一条动作的"记住"键：同一条动作重复出现时，用来判断要不要再问 */
-export function treatKey(event: { action_display?: string; facts?: Record<string, unknown> }): string {
-  const kind = String(event.facts?.kind ?? "unknown");
-  return `${kind}:${(event.action_display ?? "").trim()}`;
+/**
+ * 「记住」的键：同一类动作、同样的目标、同一个程序 → 同一把钥匙。
+ * 不包含命令原文——换一种写法不该绕过已记住的规则，也不该重复问。
+ */
+export function treatKey(event: { action_display?: string; facts?: Facts }): string {
+  const facts = event.facts ?? {};
+  const kind = factString(facts, "kind", "unknown");
+  const program = factString(facts, "program");
+  const targets = [...factList(facts, "writes"), ...factList(facts, "deletes")].sort();
+  return [kind, program, ...targets].filter(Boolean).join("|");
 }
 
 /**
@@ -172,10 +93,7 @@ export function treatKey(event: { action_display?: string; facts?: Record<string
  * 否则用户曾经批准过一次，就把它变成了永久放行——那是最危险的后门。
  */
 export function classifyApproval(
-  event: {
-    action_display?: string;
-    facts?: Record<string, unknown>;
-  },
+  event: { action_display?: string; facts?: Facts },
   remembered: string[] = [],
 ): Verdict {
   const denied = checkDeny(event);
@@ -185,37 +103,15 @@ export function classifyApproval(
     return ALLOW("你之前批准过同样的操作");
   }
 
-  const action = (event.action_display ?? "").trim();
-  const kind = String(event.facts?.kind ?? "unknown");
+  const facts = event.facts ?? {};
+  const kind = factString(facts, "kind", "unknown");
+  const effect = factString(facts, "effect", "unknown");
+  const writes = factList(facts, "writes").length + factList(facts, "deletes").length;
 
-  // 文件/目录访问类：ACP 给的 title 就是个路径，没有"动作"可言。
-  // 这类请求本身不产生修改，直接放行；否则人只会看到一个路径然后瞎猜。
-  if (kind === "other" || kind === "read") {
-    if (action && !/\s/.test(action)) return ALLOW("读取路径");
-    return ASK("无法判断该访问的意图");
-  }
+  // 只读：适配器已经给了 effect=read，或旧事实里是纯路径访问
+  if (effect === "read") return ALLOW("只读操作");
+  if ((kind === "read" || kind === "other") && writes === 0) return ALLOW("读取路径");
 
-  if (kind === "execute") return classifyCommand(action);
-
-  // edit / webfetch / 未知类型：一律问人
-  return ASK(`类型 ${kind} 需要人工确认`);
-}
-
-/**
- * 把"这条命令实际上会发生什么"翻译成人话。
- * 卡片上只写命令，人是判断不了的；这句话才是判断依据。
- */
-export function explainAction(action: string): string | null {
-  const a = action.trim();
-
-  if (/(stop-process|taskkill)[^\n]*explorer/i.test(a)) {
-    return "这会结束 Windows 资源管理器：桌面和任务栏会消失几秒（通常会自动恢复），打开着的文件夹窗口会被关掉。";
-  }
-  if (KILL_VERB.test(a) && /\b(chrome|msedge|firefox|code|winword|excel|wps)\b/i.test(a)) {
-    return "这会强制关掉程序，没保存的内容会丢。";
-  }
-  if (KILL_VERB.test(a)) {
-    return "这会强制结束进程，未保存的工作可能丢失。";
-  }
-  return null;
+  // 拿不准就问人（fail-closed）；不再靠命令文本猜
+  return ASK(effect === "unknown" ? `类型 ${kind} 的影响未知，需要人工确认` : `类型 ${kind} 需要人工确认`);
 }

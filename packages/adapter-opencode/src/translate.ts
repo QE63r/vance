@@ -18,6 +18,7 @@ import {
   type Step,
   type StepStatus,
 } from "@vance/core";
+import { classifyCommand, dangerOf } from "./command.js";
 
 export interface TranslateOptions {
   /** 适配器名，写进 agent_id */
@@ -119,6 +120,14 @@ export function extractPaths(text: string): string {
   return [...found].slice(0, 4).join(", ");
 }
 
+/** 命令的第一个 token，作为"跑了哪个程序"的事实；不认识就空着 */
+function programOf(text: string): string {
+  const cleaned = text.trim().replace(/^&\s*/, "");
+  const m = cleaned.match(/^"?([^\s"|;]+)"?/);
+  const head = m?.[1] ?? "";
+  return head.split(/[\\/]/).pop() ?? "";
+}
+
 /**
  * 翻译一行 ACP 消息。
  *
@@ -140,12 +149,12 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
     const toolCall = params.toolCall ?? {};
     const toolCallId = asString(toolCall.toolCallId, asString(params.sessionId, "unknown-tool-call"));
 
-    const locations = Array.isArray(toolCall.locations)
+    const locationsList = Array.isArray(toolCall.locations)
       ? toolCall.locations
           .map((l: any) => (typeof l?.path === "string" ? l.path : null))
           .filter((p: string | null): p is string => Boolean(p))
-          .join(", ")
-      : "";
+      : [];
+    const locations = locationsList.join(", ");
 
     const title = asString(toolCall.title, toolCallId);
     const kind = asString(toolCall.kind, "unknown");
@@ -162,6 +171,22 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
       else if (line.startsWith("-") && !line.startsWith("---")) removes += 1;
     }
 
+    // 事实层：控制面只认这些，不认命令方言。
+    // effect 是"这次动作看起来读还是写"；拿不准就是 unknown，让策略问人。
+    const commandText = asString(toolCall.rawInput?.command, "");
+    const text = commandText || title;
+    const effect =
+      kind === "edit"
+        ? "write"
+        : kind === "read" || kind === "other"
+          ? "read"
+          : kind === "execute" && classifyCommand(text).auto
+            ? "read"
+            : "unknown";
+    const danger = dangerOf(text);
+    const program = kind === "execute" ? programOf(text) : "";
+    const writePath = kind === "edit" ? asString(toolCall.rawInput?.filepath, locationsList[0] ?? "") : "";
+
     const candidate = {
       ...envelope(line, toolCallId, opts),
       type: "approval_request" as const,
@@ -172,6 +197,11 @@ export function translateAcpLine(rawLine: string, opts: TranslateOptions): Trans
         status: asString(toolCall.status, "pending"),
         locations,
         files: kind === "edit" ? asString(toolCall.rawInput?.filepath, title) : extractPaths(title),
+        effect,
+        ...(program ? { program } : {}),
+        ...(kind === "edit" && writePath ? { writes: [writePath] } : {}),
+        ...((kind === "read" || kind === "other") && locationsList.length ? { reads: locationsList } : {}),
+        ...(danger ? { danger } : {}),
         ...(kind === "edit" ? { adds, removes } : {}),
       },
     };
