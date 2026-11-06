@@ -1,6 +1,6 @@
 ﻿// 把三块接起来：Host 网页 + ACP Agent + 决定回传。
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -87,6 +87,7 @@ function startStreamer() {
 
   let buf = Buffer.alloc(0);
   streamer.stdout.on("data", (chunk) => {
+    try {
     buf = Buffer.concat([buf, chunk]);
     while (buf.length >= 4) {
       const len = buf.readUInt32LE(0);
@@ -101,6 +102,11 @@ function startStreamer() {
       lastHash = hash;
 
       host.broadcastFrame(Buffer.from(frame));
+    }
+    } catch (err) {
+      // 一帧坏了就丢掉这一帧，绝不能因此让整个服务退出
+      console.log("  ⚠ 画面帧处理失败：" + String(err).slice(0, 80));
+      buf = Buffer.alloc(0);
     }
   });
   streamer.on("exit", () => { streamer = null; });
