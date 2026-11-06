@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDeny, classifyApproval, treatKey } from "../src/index.js";
+import { checkDeny, explainAction, classifyApproval, treatKey } from "../src/index.js";
 
 /**
  * "什么不能放" —— 这一组测试守的是不可逆的底线。
@@ -101,5 +101,28 @@ describe("记住：同一条动作不再问", () => {
     const other = { action_display: 'Remove-Item -LiteralPath "other.csv"', facts: { kind: "execute" } };
     const v = classifyApproval(other, [treatKey(ev)]);
     expect(v.auto).toBe(false);
+  });
+});
+
+describe("系统关键进程", () => {
+  it("杀 winlogon / csrss 直接禁止", () => {
+    for (const cmd of [
+      "Stop-Process -Name winlogon -Force",
+      "taskkill /IM csrss.exe /F",
+      "Stop-Process -Name dwm",
+    ]) {
+      const v = checkDeny({ action_display: cmd, facts: { kind: "execute" } });
+      expect(v?.deny).toBe(true);
+    }
+  });
+
+  it("杀 explorer 不禁止（它只是重启桌面），但要给人话解释", () => {
+    const cmd = "Stop-Process -Name explorer -Force";
+    expect(checkDeny({ action_display: cmd, facts: { kind: "execute" } })).toBeNull();
+    expect(explainAction(cmd)).toContain("桌面和任务栏会消失");
+  });
+
+  it("普通命令没有解释", () => {
+    expect(explainAction("Get-ChildItem C:\\")).toBeNull();
   });
 });

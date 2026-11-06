@@ -64,6 +64,11 @@ const DENY_PATH: Array<[RegExp, string]> = [
   [/^[a-z]:\\?$/i, "磁盘根目录"],
 ];
 
+/** 结束进程的动作 */
+const KILL_VERB = /(stop-process|taskkill|\bkill\b|\bkillall\b)/i;
+/** 这些进程一杀，系统就出大事 */
+const CRITICAL_PROC = /\b(winlogon|csrss|dwm|lsass|services|smss|wininit)\b/i;
+
 /** 看起来像"会写"的命令动词，用来决定路径禁令是否适用 */
 const WRITE_VERB = /(remove-item|\bdel\b|\brm\b|\bmove\b|\bmv\b|\bcopy\b|\bset-content\b|\bout-file\b|\bnew-item\b|\badd-content\b|>\s*)/i;
 
@@ -79,6 +84,11 @@ export function checkDeny(event: {
 
   for (const [re, why] of DENY_COMMAND) {
     if (re.test(action)) return DENY(`${why}：永久禁止`);
+  }
+
+  // 杀系统关键进程：会注销、蓝屏或让桌面起不来
+  if (KILL_VERB.test(action) && CRITICAL_PROC.test(action)) {
+    return DENY("结束系统关键进程（会注销或蓝屏）：永久禁止");
   }
 
   // 路径禁令只对"写"生效：读系统目录、运行系统目录里的程序都是正常需求。
@@ -186,4 +196,23 @@ export function classifyApproval(
 
   // edit / webfetch / 未知类型：一律问人
   return ASK(`类型 ${kind} 需要人工确认`);
+}
+
+/**
+ * 把"这条命令实际上会发生什么"翻译成人话。
+ * 卡片上只写命令，人是判断不了的；这句话才是判断依据。
+ */
+export function explainAction(action: string): string | null {
+  const a = action.trim();
+
+  if (/(stop-process|taskkill)[^\n]*explorer/i.test(a)) {
+    return "这会结束 Windows 资源管理器：桌面和任务栏会消失几秒（通常会自动恢复），打开着的文件夹窗口会被关掉。";
+  }
+  if (KILL_VERB.test(a) && /\b(chrome|msedge|firefox|code|winword|excel|wps)\b/i.test(a)) {
+    return "这会强制关掉程序，没保存的内容会丢。";
+  }
+  if (KILL_VERB.test(a)) {
+    return "这会强制结束进程，未保存的工作可能丢失。";
+  }
+  return null;
 }
