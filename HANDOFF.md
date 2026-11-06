@@ -101,7 +101,8 @@
 
 ## 6. 下一步（已定）
 
-**第一屏（会话视图）已完成。** 取舍见 `adr/0006-frontend-first-screen.md`。
+**第一屏（会话视图）+ 接真 host 都已完成。**
+取舍见 `adr/0006-frontend-first-screen.md`、`adr/0007-host-static-hosting.md`。
 
 做完了什么：
 
@@ -109,17 +110,21 @@
 - 四轴 `link / device / approvals / exec` 分字段存：断线时审批仍 `offered`、执行仍 `running`、
   设备仍 `trusted`（`packages/web/test/reduce.test.ts` 5 条用例）
 - 断线显示「已断开，重连中」，恢复自动接上；`packages/web/scripts/shot.mjs` 可复现并出图
+- ~~接真 host~~：`packages/host` 用 `webDir` 托管 `packages/web/dist` 到 `/app/*`；
+  `vite build` 的 base 是 `/app/`，dev 仍是 5173 根路径；手机地址改为 `/app/?token=…`
+- 测试基线从 100 涨到 **106 passed**（新增 6 条 host 静态路由用例，含 `/app/nope.js` → 404）
 
 下一步按这个顺序：
 
-1. 接真 host：`packages/host` 加 `/app/*` 静态托管（卡：`docs/task-host-static.md`）
-   token 从 `?token=` 挪到 hash 单独一张卡（要动二维码 / 启动器 / 文档）
+1. ~~接真 host~~（已完成，卡见 `docs/task-host-static.md`）
 2. 后端 P0：消息带 `session_id`、`sessions` 接口、`artifacts` 结构化、`decision` 广播、`rules` 撤销
 3. 再补列表屏 / 设置屏 / 会话切换（设计稿 §2.2、§2.4、§3.5）
 
+token 从 `?token=` 挪到 hash 仍单独一张卡（要动二维码 / 启动器 / 文档）。
+
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
 
-下一张卡已落文件：`docs/task-host-static.md`（含复述要求、测试基线、回滚点）。
+下一张卡：后端 P0（上面第 2 步；还没落文件，按 HANDOFF + 设计稿 §5 做）。
 
 判定标准：**画得出来 = 想清楚了；画不出来就先别写代码。**
 

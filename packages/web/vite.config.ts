@@ -1,7 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // 构建产物由 host 挂在 /app/ 下，资源路径必须带前缀；
+  // dev 仍从 5173 根路径起，免得本地地址变成 /app/。
+  base: command === "build" ? "/app/" : "/",
   plugins: [react()],
   server: {
     host: "127.0.0.1",
@@ -26,4 +29,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
