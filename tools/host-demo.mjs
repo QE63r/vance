@@ -9,7 +9,7 @@ import qrcode from "qrcode-terminal";
 import QRCode from "qrcode";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -46,6 +46,58 @@ const remembered = (() => {
 function saveRules() {
   mkdirSync(dirname(RULES), { recursive: true });
   writeFileSync(RULES, JSON.stringify({ allow: remembered }, null, 2));
+}
+
+
+// ── 产物判定 ──
+// 不看它说了什么，看磁盘上到底变了什么。这是唯一不会骗人的证据。
+function snapshot(root, maxDepth = 3) {
+  const out = new Map();
+  const walk = (dir, depth) => {
+    if (depth > maxDepth || out.size > 3000) return;
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) {
+        if (/^(node_modules|\.git|\.vance)$/i.test(e.name)) continue;
+        walk(p, depth + 1);
+      } else {
+        try { out.set(p, statSync(p).size); } catch {}
+      }
+    }
+  };
+  walk(root, 0);
+  return out;
+}
+
+function diffSnapshot(before, after) {
+  const added = [], changed = [], removed = [];
+  for (const [p, size] of after) {
+    if (!before.has(p)) added.push(p);
+    else if (before.get(p) !== size) changed.push(p);
+  }
+  for (const p of before.keys()) if (!after.has(p)) removed.push(p);
+  return { added, changed, removed };
+}
+
+function reportArtifacts(before, after) {
+  const { added, changed, removed } = diffSnapshot(before, after);
+  const total = added.length + changed.length + removed.length;
+  if (total === 0) {
+    host.broadcastNotice("deny", "本轮没有任何文件变化——它说的和它做的，对不上");
+    console.log("  📦 产出：无变化");
+    return;
+  }
+  const short = (p) => p.split("\\").slice(-2).join("\\");
+  const parts = [];
+  if (added.length) parts.push(`新增 ${added.length}`);
+  if (changed.length) parts.push(`改动 ${changed.length}`);
+  if (removed.length) parts.push(`删除 ${removed.length}`);
+  const names = [...added, ...changed, ...removed].slice(0, 4).map(short).join(" · ");
+  host.broadcastNotice("auto", `本轮产出：${parts.join("，")}（${names}${total > 4 ? " …" : ""}）`);
+  console.log(`  📦 产出：${parts.join("，")}`);
+  for (const p of [...added, ...changed].slice(0, 8)) console.log(`     + ${p}`);
 }
 
 const host = new HostServer({
@@ -271,6 +323,11 @@ host.onPrompt(async (text) => {
   running = true;
   host.broadcastTurn("running");
   console.log("\n  ▶ 手机指令：" + text);
+
+  // 拍快照：工作目录 + 桌面（东西多半往这两处放）
+  const watchDirs = [CWD, join(homedir(), "Desktop")].filter((d) => existsSync(d));
+  const before = new Map();
+  for (const d of watchDirs) for (const [k, v] of snapshot(d)) before.set(k, v);
   try {
     const watchdog = setTimeout(() => {
       console.log("  \u26a0 120 秒无进展，判定为卡住");
@@ -283,6 +340,10 @@ host.onPrompt(async (text) => {
   } catch (err) {
     console.log("  出错：" + String(err));
   } finally {
+    const after = new Map();
+    for (const d of watchDirs) for (const [k, v] of snapshot(d)) after.set(k, v);
+    reportArtifacts(before, after);
+
     running = false;
     host.broadcastTurn("idle");
   }
