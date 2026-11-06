@@ -35,6 +35,20 @@
 2. **风险等级不在线上格式里。** 发送方无权声明 `risk`；风险由治理层根据 `facts` 计算。
 3. **事件不可变。** 执行结果走独立的 `tool_result`，用 `for_raw_digest` 指回原请求。
 
+## facts v1（ADR-0011）
+
+适配器把 Agent 方言翻译成事实；策略只读事实，不读 `action_display`。
+
+| 字段 | 含义 |
+|---|---|
+| `kind` | 动作类别（edit / execute / read / fetch …） |
+| `effect` | `read` / `write` / `unknown` |
+| `writes[]` / `reads[]` / `deletes[]` | 目标路径 |
+| `program` | 执行类动作的程序名 |
+| `danger` | 适配器识别的永久禁止类（格式化、关机…） |
+
+值的类型允许 `string[]`。缺 `effect` 的旧事实按 fail-closed 处理（只读/未知除外）。
+
 ## 待定
 
 - [ ] 签名算法与密钥管理（另立 ADR）

@@ -103,9 +103,8 @@
 
 ## 6. 下一步（已定）
 
-**第一屏（会话视图）+ 接真 host + 会话身份 + 审计与产出 + 任务列表都已完成。**
-取舍见 `adr/0006-frontend-first-screen.md`、`adr/0007-host-static-hosting.md`、
-`adr/0008-session-identity.md`、`adr/0009-audit-and-artifacts.md`、`adr/0010-session-list-ui.md`。
+**第一屏（会话视图）+ 接真 host + 会话身份 + 审计与产出 + 任务列表 + 事实契约都已完成。**
+取舍见 `adr/0006`…`adr/0011-facts-contract.md`（关键：`0002` 信封、`0008` 会话、`0011` 事实）。
 
 做完了什么：
 
@@ -123,7 +122,11 @@
   记住的规则（列表 + 撤销）；切换只改"看哪条"，不停正在跑的任务
 - ~~体验债~~：提交 8 秒无回执自动退回可重试、状态灯改「已配对/等待允许」、
   拦截文案说人话（"不能往 Program Files 里写文件"）、规则名换成「运行命令：…」
-- 测试基线从 100 → 106 → 112 → 116 → 120 → **121 passed**（host 25，web 7）
+- ~~事实契约~~：`facts` 增加 `effect / writes / reads / deletes / program / danger`；
+  命令方言（只读判定、危险识别）搬进 `adapter-opencode`；策略只读 facts，
+  换 Agent 只换适配器。**这是"控制面"的边界，方向和功能一样重要。**
+- 测试基线 121 → **112**：命令用例从 policy 搬到 adapter（adapter 15→38，policy 26→16），
+  总量少了 8 条重复的文本用例，覆盖反而更贴近真实边界
 
 下一步按这个顺序：
 
@@ -132,7 +135,9 @@
    ~~卡 2 审计与产出~~（`docs/task-audit-artifacts.md`）
 3. ~~列表 / 切换~~（最小版已完成：`⋯` 菜单，卡见 `docs/task-session-list.md`）；
    独立设置屏、列表徽标、路由仍未做
-4. **token 从 query 挪到 hash**（下一张；要动二维码 / 启动器 / 文档）
+4. ~~事实契约~~（已完成，卡见 `docs/task-facts-contract.md`）：策略不再读命令文本；
+   换 Agent 只加适配器
+5. **token 从 query 挪到 hash**（下一张；要动二维码 / 启动器 / 文档）
 
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
 

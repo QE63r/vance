@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
 import QRCode from "qrcode";
-import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
-import { classifyApproval, treatKey, explainAction } from "../packages/policy/dist/index.js";
+import { AcpClient, explainAction } from "../packages/adapter-opencode/dist/index.js";
+import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 
@@ -44,13 +44,17 @@ const repeatCount = new Map();
 // 本轮已授权的"同类操作"：key = 动词|目录。轮次结束就清空。
 const turnGrants = new Set();
 
-/** 把一条命令归成"同类"：动词 + 目录 */
+/** 把一条动作归成"同类"：类型 + 程序 + 目录（只读 facts，不读命令方言） */
 function grantKey(event) {
-  const action = String(event.action_display ?? "");
-  const verb = (action.match(/\b(Get-ChildItem|New-Item|Move-Item|Copy-Item|Remove-Item|Set-Content|Out-File|Export-Csv|Rename-Item)\b/i)?.[1] ?? "other").toLowerCase();
   const facts = event.facts ?? {};
-  const dir = String(facts.locations ?? facts.files ?? "").split("\\").slice(0, -1).join("\\").toLowerCase();
-  return `${verb}|${dir}`;
+  const kind = String(facts.kind ?? "other");
+  const program = String(facts.program ?? "").toLowerCase();
+  const paths = [facts.writes, facts.deletes, facts.reads].flatMap((v) => (Array.isArray(v) ? v : []));
+  const dirs = paths
+    .map((p) => String(p).split("\\").slice(0, -1).join("\\").toLowerCase())
+    .filter(Boolean)
+    .sort();
+  return `${kind}|${program}|${[...new Set(dirs)].join(",")}`;
 } // 同一条动作被要求的次数（防死循环）
 const RULES = join(homedir(), ".vance", "rules.json");
 const remembered = (() => {

@@ -34,7 +34,7 @@ export interface EventEnvelope {
 export interface ApprovalEvent extends EventEnvelope {
   type: "approval_request";
   action_display: string;
-  facts: Record<string, string | number | boolean>;
+  facts: Record<string, string | number | boolean | string[]>;
   preview?: string;
 }
 
