@@ -117,14 +117,15 @@
 下一步按这个顺序：
 
 1. ~~接真 host~~（已完成，卡见 `docs/task-host-static.md`）
-2. 后端 P0：消息带 `session_id`、`sessions` 接口、`artifacts` 结构化、`decision` 广播、`rules` 撤销
+2. 后端 P0（拆两张）：卡 1 会话身份（`docs/task-session-id.md`，待开工）→
+   卡 2 审计与产出（`artifacts` / `decision` / `rules`）
 3. 再补列表屏 / 设置屏 / 会话切换（设计稿 §2.2、§2.4、§3.5）
 
 token 从 `?token=` 挪到 hash 仍单独一张卡（要动二维码 / 启动器 / 文档）。
 
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
 
-下一张卡：后端 P0（上面第 2 步；还没落文件，按 HANDOFF + 设计稿 §5 做）。
+下一张卡已落文件：`docs/task-session-id.md`（会话身份；含复述要求、测试基线、回滚点）。
 
 判定标准：**画得出来 = 想清楚了；画不出来就先别写代码。**
 
