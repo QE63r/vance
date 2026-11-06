@@ -8,7 +8,7 @@ import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
 import { AcpClient } from "../packages/adapter-opencode/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -17,14 +17,19 @@ const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
 const CWD = process.argv[2] ?? "C:\\Users\\1\\Desktop\\梵境\\sandbox";
 const PROMPT = process.env.VANCE_PROMPT ?? process.argv[3] ?? "把 data.csv 删掉";
 const PORT = Number(process.env.PORT ?? 8787);
+const USE_TUNNEL = process.argv.includes("--tunnel");
 // 固定口令：存在 ~/.vance/token，重启后不变，手机存一次书签就能长期用
+// 固定口令：存在 ~/.vance/token，重启后不变。
+// 上公网（隧道）后 8 位挡不住扫描器，所以少于 32 位就自动升级。
 const TOKEN_FILE = join(homedir(), ".vance", "token");
 const token = (() => {
+  const make = () => randomBytes(16).toString("hex"); // 32 位十六进制
   try {
     const saved = readFileSync(TOKEN_FILE, "utf8").trim();
-    if (saved) return saved;
+    if (saved.length >= 32) return saved;
+    if (saved) console.log("  口令太短，已升级为 32 位（旧地址会失效）");
   } catch {}
-  const fresh = randomBytes(4).toString("hex");
+  const fresh = make();
   mkdirSync(dirname(TOKEN_FILE), { recursive: true });
   writeFileSync(TOKEN_FILE, fresh);
   return fresh;
@@ -83,6 +88,45 @@ console.log(`  ${url}`);
 console.log("  ────────────────────────────────────────");
 console.log("  手机扫码，或手动输入上面的地址");
 console.log("");
+
+if (USE_TUNNEL) {
+  const CANDIDATES = [
+    "C:\\Program Files (x86)\\cloudflared\\cloudflared.exe",
+    "C:\\Program Files\\cloudflared\\cloudflared.exe",
+    "cloudflared",
+  ];
+  const exe = CANDIDATES.find((p) => p === "cloudflared" || existsSync(p)) ?? "cloudflared";
+
+  console.log("  正在建立公网隧道（cloudflared）…");
+  const cf = spawn(exe, ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  let seen = "";
+  let printed = false;
+  const scan = (chunk) => {
+    seen += chunk.toString();
+    const m = seen.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+    if (m && !printed) {
+      printed = true;
+      const publicUrl = `${m[0]}/?token=${token}`;
+      // 写文件：Node 的 stdout 接管道时是块缓冲，日志可能迟迟不刷出来
+      try {
+        writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
+      } catch {}
+      console.log("");
+      console.log("  ── 公网地址（4G 也能用）──────────────────");
+      qrcode.generate(publicUrl, { small: true });
+      console.log(`  ${publicUrl}`);
+      console.log("  ────────────────────────────────────────");
+      console.log("  注意：这个地址是公开可访问的，只发给自己。");
+      console.log("");
+    }
+  };
+  cf.stdout.on("data", scan);
+  cf.stderr.on("data", scan);
+  cf.on("exit", (code) => console.log(`  [tunnel] cloudflared 退出（${code}）`));
+}
 
 const client = new AcpClient(
   { cwd: CWD, projectId: "sandbox" },

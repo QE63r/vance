@@ -62,7 +62,11 @@
   .card {
     background: var(--card); border: 1px solid var(--line);
     border-radius: 14px; padding: 14px; align-self: stretch;
+    /* 防止被父容器压扁成一条线（曾经在桌面浏览器上出现过） */
+    min-height: 72px; flex: 0 0 auto; overflow: visible;
   }
+  .card .action { min-height: 40px; }
+  .card .actions { min-height: 44px; }
   .card.alert { border-color: var(--danger); box-shadow: 0 0 0 1px rgba(184,67,58,.25); }
   .kicker { font-size: 11px; letter-spacing: .08em; color: var(--danger); text-transform: uppercase; }
   .action {
@@ -461,11 +465,19 @@
           stepEls.clear();
           bubbles.clear();
           approvalSeq = 0;
-          try {
-            for (const item of msg.items || []) dispatch(item);
-          } finally {
-            replaying = false;
+          // 每一条单独包起来：某一条坏了，不能把整页拖垮
+          for (const item of msg.items || []) {
+            try {
+              dispatch(item);
+            } catch (err) {
+              console.error("重放失败", item && item.type, err);
+              const line = document.createElement("div");
+              line.className = "notice deny";
+              line.textContent = `有一条历史没渲染出来（${item && item.type}）`;
+              feed.appendChild(line);
+            }
           }
+          replaying = false;
           toBottom(true);
           break;
         case "hello":
