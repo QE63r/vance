@@ -41,9 +41,11 @@ doskey s=git status $*
 doskey l=git log --oneline -10 $*
 doskey c=code . $*
 doskey ..=cd ..
+doskey u=type "%USERPROFILE%\.vance\tunnel-url.txt"
 
 echo   快捷命令（仅本窗口有效）:
 echo     v  启动梵境（公网+二维码）    vl 启动（只局域网）
+echo     u  看当前地址（服务常驻时用）
 echo     t  跑测试    b  构建    k  类型检查
 echo     i  装依赖    s  git status    l  最近提交    c  VS Code
 echo.
