@@ -129,6 +129,11 @@
   .composer textarea::placeholder { color: #5d6a77; }
   .composer button { flex: 0 0 auto; padding: 10px 15px; border-radius: 10px; font-size: 14px; }
   .send { background: var(--accent); }
+  .shot { background: #2a3644; color: var(--text); padding: 10px 12px; font-size: 13px; }
+  .shot:disabled { opacity: .4; }
+  .image-msg { align-self: stretch; }
+  .image-msg img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
+  .image-msg .cap { font-size: 11px; color: var(--dim); margin-top: 4px; }
   .stop { background: var(--danger); }
   .hint { max-width: 680px; margin: 6px auto 0; font-size: 11px; color: #55636f; text-align: center; }
 
@@ -148,6 +153,7 @@
 <div class="composer">
   <div class="row">
     <textarea id="input" rows="1" placeholder="在这里跟你电脑上的 Agent 说话…"></textarea>
+    <button class="shot" id="shot" title="看一眼电脑屏幕">屏幕</button>
     <button class="send" id="send">发送</button>
     <button class="stop" id="stop" hidden>停止</button>
   </div>
@@ -476,6 +482,22 @@
           if (msg.event?.type === "approval_request") showApproval(msg.event);
           break;
         case "ack": onAck(msg); break;
+        case "image": {
+          const box = document.createElement("div");
+          box.className = "image-msg";
+          const img = document.createElement("img");
+          img.src = msg.dataUrl;
+          img.alt = "电脑屏幕";
+          const cap = document.createElement("div");
+          cap.className = "cap";
+          cap.textContent = "电脑屏幕 · " + new Date().toLocaleTimeString();
+          box.append(img, cap);
+          feed.appendChild(box);
+          toBottom(true);
+          const b = document.getElementById("shot");
+          if (b) { b.disabled = false; b.textContent = "屏幕"; }
+          break;
+        }
         case "notice": {
           const n = add("notice " + (msg.level === "deny" ? "deny" : ""), msg.text || "");
           n.classList.add("notice");
@@ -529,6 +551,17 @@
       stickBottom = true;
     }
   }
+
+  const shotBtn = document.getElementById("shot");
+  shotBtn.onclick = () => {
+    if (!ws || ws.readyState !== 1) {
+      add("notice deny", "还没连上，截不了");
+      return;
+    }
+    shotBtn.disabled = true;
+    shotBtn.textContent = "…";
+    ws.send(JSON.stringify({ type: "screenshot" }));
+  };
 
   sendBtn.onclick = sendPrompt;
   stopBtn.onclick = () => {

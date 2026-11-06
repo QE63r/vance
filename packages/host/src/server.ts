@@ -54,6 +54,7 @@ export class HostServer {
   private handler: DecisionHandler | null = null;
   private promptHandler: ((text: string) => void) | null = null;
   private stopHandler: (() => void) | null = null;
+  private shotHandler: (() => Promise<string | null>) | null = null;
   private readonly tokens: Set<string>;
   /**
    * 尚未被处理掉的审批请求。
@@ -102,6 +103,11 @@ export class HostServer {
   /** 手机要求停下来 */
   onStop(handler: () => void): void {
     this.stopHandler = handler;
+  }
+
+  /** 手机要看一眼屏幕；返回 data URL，失败返回 null */
+  onScreenshot(handler: () => Promise<string | null>): void {
+    this.shotHandler = handler;
   }
 
   /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
@@ -219,6 +225,18 @@ export class HostServer {
           this.stopHandler?.();
           return;
         }
+        if (msg?.type === "screenshot") {
+          void (async () => {
+            try {
+              const url = (await this.shotHandler?.()) ?? null;
+              if (url) socket.send(JSON.stringify({ type: "image", dataUrl: url }));
+              else socket.send(JSON.stringify({ type: "notice", level: "deny", text: "截图失败" }));
+            } catch {
+              socket.send(JSON.stringify({ type: "notice", level: "deny", text: "截图失败" }));
+            }
+          })();
+          return;
+        }
         if (msg?.type !== "decision" || typeof msg.requestId !== "string") return;
         const decision: Decision =
           msg.decision === "allow" ? "allow" : msg.decision === "remember" ? "remember" : "reject";
@@ -252,16 +270,27 @@ export class HostServer {
   }
 }
 
-/** 列出本机所有可能的局域网地址，手机会从这里面挑一个能通的 */
-export function lanUrls(port: number): string[] {
-  const urls: string[] = [];
+export interface LanEntry {
+  iface: string;
+  address: string;
+  url: string;
+}
+
+/** 列出本机所有可能的局域网地址，附带网卡名，方便挑「真正那张」 */
+export function lanEntries(port: number): LanEntry[] {
+  const out: LanEntry[] = [];
   const nets = networkInterfaces();
   for (const name of Object.keys(nets)) {
     for (const net of nets[name] ?? []) {
       if (net.family === "IPv4" && !net.internal) {
-        urls.push(`http://${net.address}:${port}`);
+        out.push({ iface: name, address: net.address, url: `http://${net.address}:${port}` });
       }
     }
   }
-  return urls;
+  return out;
+}
+
+/** 兼容旧调用 */
+export function lanUrls(port: number): string[] {
+  return lanEntries(port).map((e) => e.url);
 }
