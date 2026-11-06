@@ -17,9 +17,15 @@ export function canType(s: State): boolean {
   return linkReady(s) && s.device.phase === "trusted" && pendingCount(s) === 0;
 }
 
-/** 能不能发：还要执行轴在「没在跑」 */
+/** 能不能发：执行轴在「没在跑」。unknown = 还没见过任何一轮，等同于可以开口 */
 export function canSend(s: State): boolean {
-  return canType(s) && (s.exec.phase === "idle" || s.exec.phase === "stopped" || s.exec.phase === "error");
+  return (
+    canType(s) &&
+    (s.exec.phase === "unknown" ||
+      s.exec.phase === "idle" ||
+      s.exec.phase === "stopped" ||
+      s.exec.phase === "error")
+  );
 }
 
 export function canStop(s: State): boolean {

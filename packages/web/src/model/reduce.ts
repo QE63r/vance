@@ -178,6 +178,8 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         task: msg.task ?? s.task,
         link: { phase: "ready", attempts: 0 },
         device: { ...s.device, phase: "trusted", name: msg.device || s.device.name },
+        // 还没见过任何一轮 = 空会话，等同于空闲；否则第一条消息永远发不出去
+        exec: s.exec.phase === "unknown" ? { phase: "idle" } : s.exec,
       };
 
     case "history": {
