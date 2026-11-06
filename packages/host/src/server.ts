@@ -232,6 +232,9 @@ export class HostServer {
           return;
         }
         if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
+          // 用户说的话也要进历史：否则每轮结束对账时，服务端没有这句，
+          // 重绘会把用户气泡抹掉（真实发生过）。
+          this.emit({ type: "user", text: msg.text });
           this.promptHandler?.(msg.text.trim());
           return;
         }
