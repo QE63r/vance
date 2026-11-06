@@ -114,7 +114,15 @@ export function classifyCommand(command: string): Verdict {
 
   if (segments.length === 0) return ASK("空命令");
 
+  // 只改「当前这个终端」的设置：编码、shell 变量。
+  // 它们不碰磁盘、不影响别的东西——今天为了读一个中文文件，
+  // Agent 为这类命令连问了七八次，纯噪音。
+  const isShellSetup = (seg: string): boolean =>
+    /^(\$env:[A-Za-z0-9_]+\s*=|\[console\]::(outputencoding|inputencoding)\s*=|chcp(\s|$))/i.test(seg);
+
   for (const seg of segments) {
+    if (isShellSetup(seg)) continue;
+
     const parts = seg.split(/\s+/);
     const head = parts[0]?.toLowerCase() ?? "";
 
