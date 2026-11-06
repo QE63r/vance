@@ -31,6 +31,13 @@ function readToken(): string {
   return token;
 }
 
+/** 要看的会话：?session=<id>（或 hash）。没给就跟活动会话 */
+function readSession(): string {
+  const fromHash = new URLSearchParams(location.hash.replace(/^#/, "")).get("session");
+  const fromQuery = new URLSearchParams(location.search).get("session");
+  return fromHash || fromQuery || "";
+}
+
 function deviceId(): string {
   try {
     const saved = localStorage.getItem("vance_device");
@@ -43,9 +50,11 @@ function deviceId(): string {
   }
 }
 
-function wsUrl(token: string): string {
+function wsUrl(token: string, session: string): string {
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${location.host}/ws?token=${encodeURIComponent(token)}&device=${deviceId()}`;
+  const q = new URLSearchParams({ token, device: deviceId() });
+  if (session) q.set("session", session);
+  return `${proto}//${location.host}/ws?${q.toString()}`;
 }
 
 export function send(msg: ClientMsg): boolean {
@@ -55,11 +64,15 @@ export function send(msg: ClientMsg): boolean {
 }
 
 export function boot(): void {
+  // 先读会话再读 token：readToken 会立刻清掉整个查询串
+  const session = readSession();
   const token = readToken();
+  // 会话编号留在地址栏：刷新不该丢掉"我在看哪条"
+  if (session) history.replaceState(null, "", `${location.pathname}?session=${encodeURIComponent(session)}`);
 
   const connect = (): void => {
     store.dispatch({ type: "connect" });
-    const ws = new WebSocket(wsUrl(token));
+    const ws = new WebSocket(wsUrl(token, session));
     socket = ws;
     ws.binaryType = "blob";
 

@@ -1,4 +1,4 @@
-﻿// 把三块接起来：Host 网页 + ACP Agent + 决定回传。
+// 把三块接起来：Host 网页 + ACP Agent + 决定回传。
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { createHash, randomBytes } from "node:crypto";
 import { execSync, spawn } from "node:child_process";
@@ -460,6 +460,8 @@ const client = new AcpClient(
 );
 
 const sessionId = await client.start();
+// 会话一就绪就告诉 host：晚连的手机靠它拿到 session_id，早连的会收到一条 session 通知
+host.useSession(sessionId, basename(CWD));
 try {
   mkdirSync(dirname(SESSION_FILE), { recursive: true });
   writeFileSync(SESSION_FILE, JSON.stringify({ id: sessionId, at: Date.now() }));

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent Host 的最小实现：一个网页 + 一条 WebSocket。
  *
  * 它只做搬运：
@@ -38,6 +38,32 @@ const MIME: Record<string, string> = {
 
 export type Decision = "allow" | "reject" | "remember";
 
+/** 旧流水没有 session_id；读进来统一归到这条只读会话 */
+const LEGACY_SESSION = "legacy";
+/** 会话就绪前的系统消息；不当作会话展示 */
+const UNASSIGNED_SESSION = "unassigned";
+
+interface SessionMeta {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+}
+
+interface HistoryEntry {
+  session_id: string;
+  msg: unknown;
+}
+
+function isHistoryEntry(value: unknown): value is HistoryEntry {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as HistoryEntry).session_id === "string" &&
+    "msg" in (value as object)
+  );
+}
+
 export interface HostOptions {
   /** 测试用：跳过设备配对，所有设备直接信任 */
   approveAllDevices?: boolean;
@@ -54,6 +80,12 @@ export interface HostOptions {
    * 缺了它只该是 /app/ 404，而不是起不来。
    */
   webDir?: string;
+  /**
+   * 会话流水文件，默认 `~/.vance/history.jsonl`。
+   *
+   * 测试指到临时目录：host 的用例不该往用户真实流水里写东西。
+   */
+  historyFile?: string;
   /** 监听地址，默认 0.0.0.0（局域网可访问） */
   hostname?: string;
   /** 项目名，展示用 */
@@ -76,6 +108,8 @@ interface Device {
   socket: WebSocket;
   approved: boolean;
   attached?: boolean;
+  /** 这台设备正在看哪条会话（默认等于 host 的活动会话） */
+  viewSessionId?: string;
 }
 
 export interface DecisionRecord {
@@ -103,19 +137,27 @@ export class HostServer {
    * （锁屏、切后台、刚打开页面）。不补发，人就永远看不到这条请求，
    * 而 Agent 还在那头等着。
    */
-  private readonly pendingApprovals = new Map<string, AgentEvent>();
+  private readonly pendingApprovals = new Map<string, { event: AgentEvent; sessionId: string }>();
 
   /**
-   * 会话流水。手机刷新、换设备、锁屏回来，都靠它把上下文接回去。
+   * 会话流水，按会话分桶。
+   *
+   * 每条消息都带 session_id；没有 id 的旧行读成 legacy。
    * 只放内存：进程没了就没了——这一版不做持久化。
    */
-  private readonly history: unknown[] = [];
+  private readonly history: HistoryEntry[] = [];
+
+  /** 会话表：id → 元信息；active 由 useSession 选定 */
+  private readonly sessions = new Map<string, SessionMeta>();
+
+  /** 当前活动会话；启动到 Agent 就绪之间是 null */
+  private activeSessionId: string | null = null;
 
   /** 已知设备：id → 设备。approved=false 表示还在门口等 */
   private readonly devices = new Map<string, Device>();
 
   /** 会话流水落盘，重启后还能接上 */
-  private readonly historyFile = join(homedir(), ".vance", "history.jsonl");
+  private readonly historyFile: string;
 
   /** 构建产物目录的绝对路径；没配就是 null（只有测试台，没有真前端） */
   private readonly webDir: string | null;
@@ -123,18 +165,55 @@ export class HostServer {
   constructor(private readonly options: HostOptions) {
     this.tokens = new Set([options.token]);
     this.webDir = options.webDir ? resolve(options.webDir) : null;
+    this.historyFile = options.historyFile ?? join(homedir(), ".vance", "history.jsonl");
     this.loadHistory();
   }
 
   private loadHistory(): void {
     try {
       if (!existsSync(this.historyFile)) return;
-      const lines = readFileSync(this.historyFile, "utf8").split("\n").filter(Boolean).slice(-400);
+      const lines = readFileSync(this.historyFile, "utf8").split("\n").filter(Boolean).slice(-2000);
       for (const line of lines) {
-        try { this.history.push(JSON.parse(line)); } catch {}
+        try {
+          const parsed = JSON.parse(line) as unknown;
+          const entry = isHistoryEntry(parsed) ? parsed : { session_id: LEGACY_SESSION, msg: parsed };
+          this.history.push(entry);
+          this.touch(entry.session_id);
+        } catch {}
       }
-      console.log(`[host] 恢复历史 ${this.history.length} 条`);
+      this.trimHistory();
+      console.log(`[host] 恢复历史 ${this.history.length} 条（${this.sessions.size} 条会话）`);
     } catch {}
+  }
+
+  /** 记住一条会话并刷新它的 updated_at；标题只由启动器给，host 不猜 */
+  private touch(sessionId: string, title?: string): SessionMeta {
+    const at = Date.now();
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      if (title && title !== existing.title) existing.title = title;
+      existing.updated_at = at;
+      return existing;
+    }
+    const meta: SessionMeta = {
+      id: sessionId,
+      title: title ?? (sessionId === LEGACY_SESSION ? "迁移前流水（无会话 id）" : sessionId),
+      created_at: at,
+      updated_at: at,
+    };
+    this.sessions.set(sessionId, meta);
+    return meta;
+  }
+
+  /** 每条会话最多留 400 条；超出从最旧的开始丢 */
+  private trimHistory(): void {
+    const counts = new Map<string, number>();
+    for (let i = this.history.length - 1; i >= 0; i--) {
+      const entry = this.history[i]!;
+      const n = (counts.get(entry.session_id) ?? 0) + 1;
+      counts.set(entry.session_id, n);
+      if (n > 400) this.history.splice(i, 1);
+    }
   }
 
   /** 谁来决定；返回 false 表示"这条请求已经失效或不存在" */
@@ -172,24 +251,50 @@ export class HostServer {
     this.emit({ type: "chat", role: "agent", messageId, text });
   }
 
-  /** 先把消息记进流水，再推给所有在线的手机 */
-  private emit(message: unknown): void {
-    this.history.push(message);
-    if (this.history.length > 400) this.history.splice(0, this.history.length - 400);
-    try {
-      mkdirSync(dirname(this.historyFile), { recursive: true });
-      appendFileSync(this.historyFile, JSON.stringify(message) + "\n");
-    } catch {}
-    const payload = JSON.stringify(message);
+  /**
+   * 当前活动会话就绪 / 切换。
+   *
+   * 为什么由启动器调用而不是构造函数：ACP 的 `ses_...` 要等 Agent 起来才知道。
+   * 已经有设备在线时补一条 `session` 通知，免得它一直显示空会话。
+   */
+  useSession(id: string, title?: string): void {
+    if (!id) return;
+    const meta = this.touch(id, title);
+    this.activeSessionId = id;
+    this.sendAll({ type: "session", session_id: id, title: meta.title, active: true });
+  }
+
+  /** 先把消息记进流水（带会话归属），再推给所有在线的手机 */
+  private emit(message: unknown, sessionId?: string): void {
+    const sid = sessionId ?? this.activeSessionId ?? UNASSIGNED_SESSION;
+    const tagged = { ...(message as Record<string, unknown>), session_id: sid };
+
+    // 会话就绪前的系统消息不落流水：它们不属于任何会话，回放出来只会让人困惑
+    if (sid !== UNASSIGNED_SESSION) {
+      this.history.push({ session_id: sid, msg: tagged });
+      this.trimHistory();
+      try {
+        mkdirSync(dirname(this.historyFile), { recursive: true });
+        appendFileSync(this.historyFile, JSON.stringify({ session_id: sid, msg: tagged }) + "\n");
+      } catch {}
+      this.touch(sid);
+    }
+
+    this.sendAll(tagged);
+  }
+
+  private sendAll(payload: unknown): void {
+    const text = JSON.stringify(payload);
     for (const client of this.clients) {
-      if (client.readyState === client.OPEN) client.send(payload);
+      if (client.readyState === client.OPEN) client.send(text);
     }
   }
 
   /** 把一条事件推给所有已连接的手机 */
   broadcast(event: AgentEvent): void {
+    const sid = this.activeSessionId ?? UNASSIGNED_SESSION;
     if (event.type === "approval_request") {
-      this.pendingApprovals.set(event.request_id, event);
+      this.pendingApprovals.set(event.request_id, { event, sessionId: sid });
     }
     this.emit({ type: "event", event });
   }
@@ -295,11 +400,26 @@ export class HostServer {
     const http = createServer((req, res) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
-      // 顺序固定：/health → /app/assets/* → /app fallback → 其余 404。
+      // 顺序固定：/health → /sessions → /app/assets/* → /app fallback → 其余 404。
       // /ws 走 upgrade 事件，不经过这条链。
       if (url.pathname === "/health") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, devices: this.deviceCount }));
+        return;
+      }
+
+      // 只读会话列表：手机刷新 / 重开之后靠它知道"还有哪些事摆着"
+      if (url.pathname === "/sessions") {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { allow: "GET, HEAD" });
+          res.end("method not allowed");
+          return;
+        }
+        const sessions = [...this.sessions.values()]
+          .map((s) => ({ ...s, active: s.id === this.activeSessionId }))
+          .sort((a, b) => b.updated_at - a.updated_at);
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(req.method === "HEAD" ? undefined : JSON.stringify({ sessions }));
         return;
       }
       if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
@@ -334,6 +454,16 @@ export class HostServer {
       const kind = /iphone|android|mobile/i.test(ua) ? "手机" : "电脑";
       const deviceId = params.get("device") || `anon-${Math.random().toString(16).slice(2, 10)}`;
 
+      // 指定 ?session= 就是"看这条会话"；没指定就跟活动会话。
+      // 未知 id 不静默切换：保留连接、给解释，仍回活动会话的流水。
+      const wantedSession = params.get("session") ?? "";
+      let viewSession = this.activeSessionId;
+      let missingSession = "";
+      if (wantedSession) {
+        if (this.sessions.has(wantedSession)) viewSession = wantedSession;
+        else missingSession = wantedSession;
+      }
+
       // 第一台设备自动信任，否则谁都进不来
       const firstEver =
         this.options.approveAllDevices === true || ![...this.devices.values()].some((d) => d.approved);
@@ -347,6 +477,7 @@ export class HostServer {
       };
       device.socket = socket;
       device.attached = false;
+      device.viewSessionId = viewSession ?? UNASSIGNED_SESSION;
       this.devices.set(deviceId, device);
 
       if (!device.approved) {
@@ -357,6 +488,17 @@ export class HostServer {
       }
 
       this.attach(device);
+
+      if (missingSession) {
+        socket.send(
+          JSON.stringify({
+            type: "notice",
+            level: "deny",
+            session_id: device.viewSessionId,
+            text: `会话 ${missingSession} 不存在，已回到当前会话`,
+          }),
+        );
+      }
     });
 
 
@@ -388,6 +530,14 @@ export class HostServer {
     }
   }
 
+  /** 某条会话的流水；审批请求不重放（它们该以 pending 形式单独补发） */
+  private historyFor(sessionId: string): unknown[] {
+    return this.history
+      .filter((h) => h.session_id === sessionId)
+      .map((h) => h.msg)
+      .filter((m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"));
+  }
+
   /** 真正把一台设备接进来：发 hello + 历史 + 待办，并挂上消息处理 */
   private attach(device: Device): void {
     const socket = device.socket;
@@ -397,21 +547,23 @@ export class HostServer {
 
     console.log(`[host] 设备已连接：${device.name}（${device.ip}，共 ${this.clients.size} 台）`);
 
+    const view = device.viewSessionId ?? this.activeSessionId ?? UNASSIGNED_SESSION;
+
     socket.send(
       JSON.stringify({
         type: "hello",
         project: this.options.projectName ?? "vance",
         task: this.options.task ?? "",
         device: device.name,
+        session_id: view,
       }),
     );
 
-    const past = this.history.filter(
-      (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
-    );
-    if (past.length > 0) socket.send(JSON.stringify({ type: "history", items: past }));
+    const past = this.historyFor(view);
+    if (past.length > 0) socket.send(JSON.stringify({ type: "history", session_id: view, items: past }));
     for (const pending of this.pendingApprovals.values()) {
-      socket.send(JSON.stringify({ type: "event", event: pending }));
+      if (pending.sessionId !== view) continue;
+      socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: view }));
     }
 
     // ① 告诉其他设备：又来了一台（看得见才叫可信）
@@ -467,12 +619,12 @@ export class HostServer {
     }
 
     if (msg?.type === "resync") {
-      const past = this.history.filter(
-        (m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"),
-      );
-      if (past.length > 0) socket.send(JSON.stringify({ type: "history", items: past }));
+      const view = device.viewSessionId ?? this.activeSessionId ?? UNASSIGNED_SESSION;
+      const past = this.historyFor(view);
+      if (past.length > 0) socket.send(JSON.stringify({ type: "history", session_id: view, items: past }));
       for (const pending of this.pendingApprovals.values()) {
-        socket.send(JSON.stringify({ type: "event", event: pending }));
+        if (pending.sessionId !== view) continue;
+        socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: view }));
       }
       return;
     }
@@ -505,7 +657,7 @@ export class HostServer {
     // ② 批准记录里必须带上"是谁点的"
     const accepted = this.handler?.({ requestId: msg.requestId, decision, by: device.name }) ?? false;
     if (accepted) {
-      const resolved = this.pendingApprovals.get(msg.requestId) as any;
+      const resolved = this.pendingApprovals.get(msg.requestId)?.event as any;
       this.pendingApprovals.delete(msg.requestId);
       const verb = decision === "reject" ? "已拒绝" : "已批准";
       this.emit({
@@ -514,7 +666,9 @@ export class HostServer {
         text: `${verb}：${String(resolved?.action_display ?? "").slice(0, 60)}（${device.name}）`,
       });
     }
-    socket.send(JSON.stringify({ type: "ack", requestId: msg.requestId, accepted }));
+    socket.send(
+      JSON.stringify({ type: "ack", requestId: msg.requestId, accepted, session_id: device.viewSessionId }),
+    );
   }
 
   close(): Promise<void> {
