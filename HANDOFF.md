@@ -89,6 +89,8 @@
     已在 `vite.config.ts` 里 `watch.ignored` 掉 `mock/**` 和 `*.tmpdir/**`。
 18. **`session/load` 成功不一定带 `sessionId`**：不兜底就会卡在启动（`start()` 永不返回，
     页面连上却没有"当前会话"）。adapter 现在用请求的 id 补上。
+19. **流式 chat 片段会落盘很多行**：按"条"计历史会把一次对话从中间切碎。
+    host 回放前按 `messageId` 合并片段，别再按行数估历史长度。
 
 ## 5. 半成品 / 没做的
 
