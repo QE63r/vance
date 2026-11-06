@@ -545,6 +545,8 @@ host.onPrompt(async (text) => {
     running = false;
     if (turnWatch) { turnWatch(); turnWatch = null; }
     host.broadcastTurn("idle");
+    // 完全权限只对当前任务有效：一轮结束自动退回工作区
+    if (host.currentProfile === "full") host.setProfile("workspace", "auto");
   }
 });
 

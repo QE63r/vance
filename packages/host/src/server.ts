@@ -198,7 +198,9 @@ export class HostServer {
     this.webDir = options.webDir ? resolve(options.webDir) : null;
     this.historyFile = options.historyFile ?? join(homedir(), ".vance", "history.jsonl");
     this.profileFile = options.profileFile ?? join(homedir(), ".vance", "profile.json");
-    this.profile = this.loadProfile() ?? options.defaultProfile ?? "workspace";
+    const saved = this.loadProfile();
+    // 完全权限是任务级的：重启不应该恢复成 full
+    this.profile = saved && saved !== "full" ? saved : options.defaultProfile ?? "workspace";
     this.loadHistory();
   }
 
