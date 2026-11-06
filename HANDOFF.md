@@ -36,6 +36,7 @@
 | 历史持久化 | ✅ | `~/.vance/history.jsonl` |
 | 开机自启 + 崩溃重拉 | ✅ | 登录 Windows 后自动跑 |
 | 中文不乱码 | ✅ | 控制台 65001；列 50+ 中文名无乱码 |
+| **前端第一屏**（会话视图） | ✅ | `npm run dev` → 390×844 三块区域；断线显示"已断开，重连中" |
 
 ## 2. 架构（三层，别越界）
 
@@ -82,13 +83,17 @@
     采集事实的代码同样需要被验证。
 15. **两个会话同时改同一个仓库会互相踩**：提交前看 `git status`，
     别把另一个会话的半成品一起提交。
+16. **history 是全局一条流水，且过滤掉了审批请求**：不分会话。
+    做「切会话」之前必须先补 `session_id`，否则两条会话的流水会串。
+17. **Windows 上 Vite 会盯 mock 的临时文件**：编辑器写 `mock/host.mjs` 时 `EBUSY` 会让 dev 直接退出。
+    已在 `vite.config.ts` 里 `watch.ignored` 掉 `mock/**` 和 `*.tmpdir/**`。
 
 ## 5. 半成品 / 没做的
 
 | 项 | 现状 |
 |---|---|
-| **真前端** | `packages/host/public/index.html` 是**管道测试台**，不是产品界面 |
-| 多会话（分装/切换） | 没做；目前一次只跑一个会话 |
+| **真前端** | 第一屏（会话视图）已落地 `packages/web`；列表屏 / 设置屏 / 会话切换没做 |
+| 多会话（分装/切换） | 没做；目前一次只跑一个会话；`session_id` 还没进协议 |
 | 点击 / 打字 | 没做；卡在对话框上还得回工位 |
 | 加密 | 无；明文到 Funnel |
 | 多电脑 / 多用户 | 没做 |
@@ -96,14 +101,22 @@
 
 ## 6. 下一步（已定）
 
-**任务：做前端第一屏（会话视图）。**
+**第一屏（会话视图）已完成。** 取舍见 `adr/0006-frontend-first-screen.md`。
 
-```
-不要再往 index.html 加功能 —— 它是测试台
-信息架构见 docs/frontend-ia.md（另一个会话产出）
-三块区域：会话列表 / 单会话视图 / 设置
-状态机四轴：连接 / 设备 / 审批 / 执行（互不覆盖，不要压成一个 reducer）
-```
+做完了什么：
+
+- `npm run dev` 起 Vite（5173）+ 假 host（8787）；390×844 下三块区域都在
+- 四轴 `link / device / approvals / exec` 分字段存：断线时审批仍 `offered`、执行仍 `running`、
+  设备仍 `trusted`（`packages/web/test/reduce.test.ts` 5 条用例）
+- 断线显示「已断开，重连中」，恢复自动接上；`packages/web/scripts/shot.mjs` 可复现并出图
+
+下一步按这个顺序：
+
+1. 接真 host：`packages/host` 加 `/app/*` 静态托管；token 也从 `?token=` 挪到 hash
+2. 后端 P0：消息带 `session_id`、`sessions` 接口、`artifacts` 结构化、`decision` 广播、`rules` 撤销
+3. 再补列表屏 / 设置屏 / 会话切换（设计稿 §2.2、§2.4、§3.5）
+
+先别做的：真机上的点击/打字（要另立协议）；多电脑。
 
 判定标准：**画得出来 = 想清楚了；画不出来就先别写代码。**
 
@@ -141,6 +154,8 @@ packages/policy            禁止清单 / 只读判定 / 记住规则
 packages/adapter-base      fail-closed 四步
 packages/adapter-opencode  ACP 适配器（含 session/load 恢复）
 packages/host              服务端 + 手机页面（测试台）
+packages/web               真前端（会话第一屏）；mock/ 只给 dev
+packages/web/scripts/shot.mjs  手机尺寸截图 + 断网复现
 tools/host-demo.mjs        把三者接起来的入口
 tools/mcp-vance.mjs        给 Agent 挂的可靠工具
 tools/screen-stream.ps1    实时画面抓帧
@@ -155,6 +170,7 @@ v                  启动（已在跑则显示地址）
 vl                 只局域网
 u                  看当前地址
 t / b / k          测试 / 构建 / 类型检查
+npm run dev        起前端：Vite 5173 + 假 host 8787（先跑过一次 pnpm install）
 ```
 
 状态文件都在 `~/.vance/`：`token` 口令、`history.jsonl` 界面历史、
