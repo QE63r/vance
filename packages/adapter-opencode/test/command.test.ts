@@ -16,6 +16,8 @@ describe("只读命令：放行", () => {
     "git status",
     "Get-ChildItem | Measure-Object",
     "Get-ChildItem; Get-Content a.txt",
+    'chcp 65001 > $null; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8; Get-ChildItem -LiteralPath "C:\\Users\\1\\Desktop" -Directory | Select-Object Name | Format-Table -AutoSize | Out-String',
+    "Get-ChildItem | Out-String",
   ];
 
   for (const cmd of allowed) {

@@ -22,6 +22,8 @@ const READ_ONLY = new Set([
   "get-childitem", "get-content", "get-item", "test-path", "select-string",
   "measure-object", "select-object", "sort-object", "format-table", "format-list",
   "where-object", "group-object", "compare-object", "resolve-path", "get-location",
+  "out-string", "out-host", "write-output", "write-host", "convertto-json", "convertto-csv",
+  "get-command", "get-help", "get-process",
   "ls", "dir", "cat", "type", "head", "tail", "grep", "rg", "find", "wc",
   "pwd", "echo", "tree",
 ]);
