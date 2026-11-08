@@ -178,7 +178,7 @@ C:\Users\1\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe 
   换 Agent 只换适配器。**这是"控制面"的边界，方向和功能一样重要。**
 - ~~权限档位~~：只读 / 工作区 / 完全；默认工作区，完全权限需手机显式切换；
   硬禁止（系统目录、凭据、磁盘）任何档位都不放
-- 测试基线：从 100 一路到 **123 passed**（policy 21、host 29、adapter 40、web 7、core 21、base 5）；
+- 测试基线：从 100 一路到 **124 passed**（policy 21、host 29、adapter 40、web 8、core 21、base 5）；
   命令用例在 adapter，策略只剩事实判定
 
 下一步按这个顺序：

@@ -149,4 +149,13 @@ describe("空会话", () => {
     s = reduce(s, { type: "msg", msg: { type: "session", session_id: "ses_y", title: "Y", active: false } });
     expect(s.sessionId).toBe("ses_y");
   });
+
+  it("本地先画的那句，服务端回显只确认、不重复", () => {
+    let s = reduce(initialState, { type: "localUser", text: "贪吃蛇吧", at: 1 });
+    s = reduce(s, { type: "msg", msg: { type: "user", text: "贪吃蛇吧" } });
+
+    const users = s.timeline.filter((i) => i.kind === "user");
+    expect(users).toHaveLength(1);
+    expect(s.pendingUser).toBeNull();
+  });
 });
