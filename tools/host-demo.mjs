@@ -428,16 +428,7 @@ const client = new AcpClient(
       console.log(`  ${mark} ${event.step?.title}`);
     },
     onApproval: (event, reply) => {
-      // 同一条动作反复找上门，只提醒，不替用户拒绝。
-      // 拒绝也是用户的决定权；系统最多把"它在打转"这件事说出来。
-      const actionKey = String(event.action_display ?? "");
-      const times = (repeatCount.get(actionKey) ?? 0) + 1;
-      repeatCount.set(actionKey, times);
-      if (times >= 3) {
-        host.broadcastNotice("auto", `它已经第 ${times} 次要求同一条命令，可能卡住了；这次仍然由你决定`);
-      }
-
-      // 判定顺序：禁止 → 记住 → 本轮授权 → 只读 → 问人
+      // 判定顺序：禁止 → 策略档位 → 本轮授权 → 问人
       const verdict = classifyApproval(event, {
         remembered,
         profile: host.currentProfile,
@@ -455,7 +446,10 @@ const client = new AcpClient(
 
       if (verdict.auto) {
         console.log(`  · 静默放行（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
-        host.broadcastNotice("auto", `已静默放行：${String(event.action_display).slice(0, 40)}`);
+        // 纯读太频繁，不上时间线；写/跑脚本才值得让用户知道
+        if (event.facts?.effect !== "read") {
+          host.broadcastNotice("auto", `已静默放行：${String(event.action_display).slice(0, 40)}`);
+        }
         reply("allow");
         return;
       }
@@ -469,6 +463,15 @@ const client = new AcpClient(
         host.broadcastNotice("auto", `本轮已允许同类操作：${String(event.action_display).slice(0, 40)}`);
         reply("allow");
         return;
+      }
+
+      // 只有"真正推到人面前"的请求才计数。自动放行的读不算，
+      // 否则会刷出"第 9 次要求同一条命令"，但一张卡都没出。
+      const actionKey = String(event.action_display ?? "");
+      const times = (repeatCount.get(actionKey) ?? 0) + 1;
+      repeatCount.set(actionKey, times);
+      if (times >= 3) {
+        host.broadcastNotice("auto", `它已经第 ${times} 次要求同一条命令，可能卡住了；这次仍然由你决定`);
       }
 
       pending.set(event.request_id, { reply, key: treatKey(event), event });
