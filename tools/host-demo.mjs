@@ -428,16 +428,13 @@ const client = new AcpClient(
       console.log(`  ${mark} ${event.step?.title}`);
     },
     onApproval: (event, reply) => {
-      // 同一条动作第三次找上门，说明它卡在循环里了。
-      // 再让人点十次批准，是把 Agent 的毛病转嫁给用户。
+      // 同一条动作反复找上门，只提醒，不替用户拒绝。
+      // 拒绝也是用户的决定权；系统最多把"它在打转"这件事说出来。
       const actionKey = String(event.action_display ?? "");
       const times = (repeatCount.get(actionKey) ?? 0) + 1;
       repeatCount.set(actionKey, times);
       if (times >= 3) {
-        console.log(`  ⛔ 第 ${times} 次要求同一条命令，自动拒绝`);
-        host.broadcastNotice("deny", `它已经第 ${times} 次要求同一条命令，自动拒绝；建议换个说法或直接接管`);
-        reply("reject");
-        return;
+        host.broadcastNotice("auto", `它已经第 ${times} 次要求同一条命令，可能卡住了；这次仍然由你决定`);
       }
 
       // 判定顺序：禁止 → 记住 → 本轮授权 → 只读 → 问人

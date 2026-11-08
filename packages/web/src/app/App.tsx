@@ -150,8 +150,13 @@ export function App() {
         canStop={canStop(s)}
         hint={hintText(s, now)}
         onSend={(text) => {
-          stick.current = true;
-          return send({ type: "prompt", text });
+          const ok = send({ type: "prompt", text });
+          if (ok) {
+            // 先本地画出来，别等服务端回显；回显只做确认
+            store.dispatch({ type: "localUser", text, at: Date.now() });
+            stick.current = true;
+          }
+          return ok;
         }}
         onStop={() => send({ type: "stop" })}
       />

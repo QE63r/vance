@@ -57,6 +57,8 @@ export interface State {
   sessionId: string;
   /** 权限档位；hello / profile 都会更新它 */
   profile: Profile;
+  /** 本地先画、还没等到服务端回显的那句话；回显时只确认，不重复 */
+  pendingUser: string | null;
   lastEventAt: number | null;
   replaying: boolean;
   seq: number;
@@ -72,6 +74,7 @@ export const initialState: State = {
   task: "",
   sessionId: "",
   profile: "workspace",
+  pendingUser: null,
   lastEventAt: null,
   replaying: false,
   seq: 0,
@@ -83,6 +86,7 @@ export type Action =
   | { type: "close"; code?: number }
   | { type: "msg"; msg: ServerMsg; replay?: boolean }
   | { type: "tick"; now: number }
+  | { type: "localUser"; text: string; at: number }
   | { type: "decide"; requestId: string; decision: Decision }
   | { type: "decide-timeout"; requestId: string }
   | { type: "device-decided"; deviceId: string };
@@ -221,6 +225,10 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
       return { ...appendAgentChunk(s, msg.messageId, msg.text, at), lastEventAt: at };
 
     case "user": {
+      // 本地已经先画了同一句：服务端回显只当确认，不再加一条
+      if (s.pendingUser !== null && msg.text.trim() === s.pendingUser) {
+        return { ...s, pendingUser: null, lastEventAt: at };
+      }
       const [id, seq] = nextId(s, "user");
       return { ...append({ ...s, seq }, { id, kind: "user", at, text: msg.text }), lastEventAt: at };
     }
@@ -307,6 +315,15 @@ export function reduce(s: State, action: Action): State {
       if (action.code === 4001) return { ...s, link: { phase: "rejected", attempts: s.link.attempts } };
       if (action.code === 4004) return { ...s, link: { phase: "denied", attempts: s.link.attempts } };
       return { ...s, link: { phase: "reconnecting", attempts: s.link.attempts + 1 } };
+    }
+
+    case "localUser": {
+      const [id, seq] = nextId(s, "user");
+      const next = append(
+        { ...s, seq, pendingUser: action.text.trim() },
+        { id, kind: "user", at: action.at, text: action.text },
+      );
+      return { ...next, lastEventAt: action.at };
     }
 
     case "msg":
