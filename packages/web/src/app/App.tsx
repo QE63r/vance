@@ -27,10 +27,14 @@ export function App() {
     return () => window.clearInterval(t);
   }, []);
 
-  // 贴底时自动跟随；用户手动上翻后不抢
+  // 贴底时自动跟随；用户手动上翻后不抢。
+  // 但"自己刚发的消息"必须可见：键盘弹出会把贴底开关冲掉，
+  // 所以最后一条是 user 时无条件滚到底。
   useEffect(() => {
     const el = feedRef.current;
-    if (!el || !stick.current) return;
+    if (!el) return;
+    const last = s.timeline[s.timeline.length - 1];
+    if (!stick.current && last?.kind !== "user") return;
     el.scrollTop = el.scrollHeight;
   }, [s.timeline.length, s.approvals, now]);
 
@@ -145,7 +149,10 @@ export function App() {
         canSend={canSend(s)}
         canStop={canStop(s)}
         hint={hintText(s, now)}
-        onSend={(text) => send({ type: "prompt", text })}
+        onSend={(text) => {
+          stick.current = true;
+          return send({ type: "prompt", text });
+        }}
         onStop={() => send({ type: "stop" })}
       />
 
