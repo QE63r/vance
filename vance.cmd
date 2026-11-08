@@ -31,6 +31,11 @@ goto :eof
 chcp 936 >nul
 echo.
 echo   梵境已经在跑了（端口 8787 被占用），不再重复启动。
+if /i "%~1"=="--tunnel" (
+  echo.
+  echo   注意：已有 host 在跑，本次没有开新隧道。
+  echo   要开公网：先关掉正在跑的 host，再按 v。
+)
 echo.
 chcp 65001 >nul
 node tools\print-url.mjs
