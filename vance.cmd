@@ -28,13 +28,20 @@ node tools\host-demo.mjs "%~dp0..\sandbox" %*
 goto :eof
 
 :already
+chcp 936 >nul
 echo.
 echo   梵境已经在跑了（端口 8787 被占用），不再重复启动。
 echo.
+chcp 65001 >nul
+node tools\print-url.mjs
+chcp 936 >nul
+echo.
 if exist "%USERPROFILE%\.vance\tunnel-url.txt" (
-  echo   公网地址：
-  type "%USERPROFILE%\.vance\tunnel-url.txt"
-  echo.
+  findstr /v /c:"api.trycloudflare.com" "%USERPROFILE%\.vance\tunnel-url.txt" >nul && (
+    echo   公网地址：
+    type "%USERPROFILE%\.vance\tunnel-url.txt"
+    echo.
+  )
 )
 if exist "%USERPROFILE%\.vance\qr.png" (
   echo   二维码图片：%USERPROFILE%\.vance\qr.png

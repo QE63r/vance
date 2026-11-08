@@ -365,7 +365,9 @@ if (USE_TUNNEL) {
   let printed = false;
   const scan = (chunk) => {
     seen += chunk.toString();
-    const m = seen.match(/https:\/\/[a-z0-9-]+\.trycloudflare\.com/);
+    // 只认真实隧道域名：cloudflared 的输出里也会出现 api.trycloudflare.com，
+    // 那是 API 端点，不是隧道地址。
+    const m = seen.match(/https:\/\/(?!api\.|www\.)[a-z0-9-]+\.trycloudflare\.com/i);
     if (m && !printed) {
       printed = true;
       const publicUrl = `${m[0]}/app/?token=${token}`;
