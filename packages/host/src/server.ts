@@ -12,9 +12,10 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createHash, randomBytes } from "node:crypto";
 import { homedir, networkInterfaces } from "node:os";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, resolve, sep } from "node:path";
+import { dirname, basename, extname, join, resolve, sep } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
 
@@ -69,6 +70,39 @@ export interface ArtifactsPayload {
   warnings: string[];
 }
 
+/** 取件单：只对一个文件、60 秒、绑定签发时的 sha256 */
+interface ArtifactTicket {
+  path: string;
+  sha256: string;
+  size: number;
+  contentType: string;
+  expiresAt: number;
+  sessionId: string;
+}
+
+const ARTIFACT_MIME: Record<string, string> = {  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".pdf": "application/pdf",
+  ".txt": "text/plain; charset=utf-8",
+  ".md": "text/plain; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".html": "text/plain; charset=utf-8",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+/** 路径比较用：Windows 不区分大小写；解析失败就退化成原串小写 */
+function normalizePath(path: string): string {
+  try {
+    return resolve(path).toLowerCase();
+  } catch {
+    return path.toLowerCase();
+  }
+}
+
 /** 规则由启动器持有（~/.vance/rules.json）；host 只提供查询与撤销口 */
 export interface RulesProvider {
   list(): string[];
@@ -110,6 +144,8 @@ export interface HostOptions {
   profileFile?: string;
   /** 默认权限档位，默认 workspace */
   defaultProfile?: Profile;
+  /** 取件单有效期（毫秒），默认 60 秒；测试可以调小 */
+  artifactTicketTtlMs?: number;
   /** 监听地址，默认 0.0.0.0（局域网可访问） */
   hostname?: string;
   /** 项目名，展示用 */
@@ -190,6 +226,11 @@ export class HostServer {
   private profile: Profile;
   private readonly profileFile: string;
 
+  /** 每个会话最近一次产出；取件只能命中这里列出的文件 */
+  private readonly latestArtifacts = new Map<string, ArtifactsPayload>();
+  private readonly artifactTickets = new Map<string, ArtifactTicket>();
+  private readonly ticketTtlMs: number;
+
   /** 构建产物目录的绝对路径；没配就是 null（只有测试台，没有真前端） */
   private readonly webDir: string | null;
 
@@ -198,6 +239,7 @@ export class HostServer {
     this.webDir = options.webDir ? resolve(options.webDir) : null;
     this.historyFile = options.historyFile ?? join(homedir(), ".vance", "history.jsonl");
     this.profileFile = options.profileFile ?? join(homedir(), ".vance", "profile.json");
+    this.ticketTtlMs = options.artifactTicketTtlMs ?? 60_000;
     const saved = this.loadProfile();
     // 完全权限是任务级的：重启不应该恢复成 full
     this.profile = saved && saved !== "full" ? saved : options.defaultProfile ?? "workspace";
@@ -339,6 +381,8 @@ export class HostServer {
 
   /** 一轮结束后的产出：结构化广播，同时落进流水 */
   broadcastArtifacts(payload: ArtifactsPayload): void {
+    const sid = this.activeSessionId ?? "unassigned";
+    this.latestArtifacts.set(sid, payload);
     this.emit({ type: "artifacts", artifacts: payload });
   }
 
@@ -563,6 +607,198 @@ export class HostServer {
             "cache-control": "no-store",
           });
           res.end(JSON.stringify({ ok, profile: this.profile }));
+        });
+        return;
+      }
+
+      // 取件单：只允许「当前会话最近一次产出」里的文件，60 秒、单文件
+      if (url.pathname === "/artifacts/ticket") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 16_000) req.destroy();
+        });
+        req.on("end", () => {
+          const send = (status: number, body: unknown) => {
+            res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+            res.end(JSON.stringify(body));
+          };
+          let body: { path?: unknown; session_id?: unknown } = {};
+          try {
+            body = JSON.parse(raw) as typeof body;
+          } catch {
+            send(400, { ok: false, error: "bad-json" });
+            return;
+          }
+          const requested = typeof body.path === "string" ? body.path : "";
+          if (!requested) {
+            send(400, { ok: false, error: "path-required" });
+            return;
+          }
+          const sid = typeof body.session_id === "string" ? body.session_id : this.activeSessionId ?? "unassigned";
+          const latest = this.latestArtifacts.get(sid);
+          if (!latest) {
+            send(404, { ok: false, error: "no-artifacts" });
+            return;
+          }
+          const allowed = [...latest.added, ...latest.changed].map((p) => normalizePath(p));
+          if (!allowed.includes(normalizePath(requested))) {
+            send(404, { ok: false, error: "not-an-artifact" });
+            return;
+          }
+
+          let bytes: Buffer;
+          try {
+            if (!statSync(requested).isFile()) throw new Error("not-file");
+            bytes = readFileSync(requested);
+          } catch {
+            send(404, { ok: false, error: "missing" });
+            return;
+          }
+          const sha256 = createHash("sha256").update(bytes).digest("hex");
+          const ticket = randomBytes(24).toString("base64url");
+          const expiresAt = Date.now() + this.ticketTtlMs;
+          this.artifactTickets.set(ticket, {
+            path: requested,
+            sha256,
+            size: bytes.length,
+            contentType: ARTIFACT_MIME[extname(requested).toLowerCase()] ?? "application/octet-stream",
+            expiresAt,
+            sessionId: sid,
+          });
+          send(200, {
+            ticket,
+            path: requested,
+            sha256,
+            size: bytes.length,
+            content_type: ARTIFACT_MIME[extname(requested).toLowerCase()] ?? "application/octet-stream",
+            expires_at: expiresAt,
+          });
+        });
+        return;
+      }
+
+      // 凭票据取原件：票据本身就是短期凭证，不再要主 token
+      if (url.pathname.startsWith("/artifacts/") && url.pathname !== "/artifacts/accept") {
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { allow: "GET, HEAD" });
+          res.end("method not allowed");
+          return;
+        }
+        const ticket = url.pathname.slice("/artifacts/".length);
+        const entry = this.artifactTickets.get(ticket);
+        if (!entry) {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("not found");
+          return;
+        }
+        if (entry.expiresAt <= Date.now()) {
+          this.artifactTickets.delete(ticket);
+          res.writeHead(410, { "content-type": "text/plain; charset=utf-8" });
+          res.end("ticket expired");
+          return;
+        }
+        let bytes: Buffer;
+        try {
+          bytes = readFileSync(entry.path);
+        } catch {
+          res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+          res.end("not found");
+          return;
+        }
+        const inline = /^(image\/|application\/pdf|text\/)/.test(entry.contentType);
+        const name = basename(entry.path);
+        // Content-Disposition 头只能是 ASCII：中文名用 RFC 5987 的 filename* 带上
+        const asciiName = name.replace(/[^\x20-\x7E]/g, "_").replace(/["\\]/g, "_");
+        res.writeHead(200, {
+          "content-type": entry.contentType,
+          "content-length": String(bytes.length),
+          "cache-control": "no-store",
+          "content-disposition": `${inline ? "inline" : "attachment"}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        });
+        res.end(req.method === "HEAD" ? undefined : bytes);
+        return;
+      }
+
+      // 验收：重新算哈希，和票里的不一致就 409——你确认的必须是你看到的字节
+      if (url.pathname === "/artifacts/accept") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 16_000) req.destroy();
+        });
+        req.on("end", () => {
+          const send = (status: number, body: unknown) => {
+            res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+            res.end(JSON.stringify(body));
+          };
+          let body: { ticket?: unknown; decision?: unknown; note?: unknown } = {};
+          try {
+            body = JSON.parse(raw) as typeof body;
+          } catch {
+            send(400, { ok: false, error: "bad-json" });
+            return;
+          }
+          const ticket = typeof body.ticket === "string" ? body.ticket : "";
+          const decision = body.decision === "reject" ? "reject" : body.decision === "accept" ? "accept" : "";
+          if (!ticket || !decision) {
+            send(400, { ok: false, error: "ticket-and-decision-required" });
+            return;
+          }
+          const entry = this.artifactTickets.get(ticket);
+          if (!entry) {
+            send(404, { ok: false, error: "unknown-ticket" });
+            return;
+          }
+          let bytes: Buffer;
+          try {
+            bytes = readFileSync(entry.path);
+          } catch {
+            send(404, { ok: false, error: "missing" });
+            return;
+          }
+          const sha256 = createHash("sha256").update(bytes).digest("hex");
+          if (sha256 !== entry.sha256) {
+            send(409, { ok: false, error: "file-changed", sha256 });
+            return;
+          }
+          const note = typeof body.note === "string" ? body.note.trim() : "";
+          this.emit({
+            type: "artifact_decision",
+            path: entry.path,
+            sha256,
+            decision,
+            by: "phone",
+            at: Date.now(),
+            note: note || undefined,
+          });
+          this.artifactTickets.delete(ticket);
+          if (decision === "reject" && note) {
+            this.promptHandler?.(`交付物未通过：${note}`);
+          }
+          send(200, { ok: true, decision, path: entry.path, sha256 });
         });
         return;
       }

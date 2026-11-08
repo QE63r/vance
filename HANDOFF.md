@@ -178,7 +178,9 @@ C:\Users\1\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe 
   换 Agent 只换适配器。**这是"控制面"的边界，方向和功能一样重要。**
 - ~~权限档位~~：只读 / 工作区 / 完全；默认工作区，完全权限需手机显式切换；
   硬禁止（系统目录、凭据、磁盘）任何档位都不放
-- 测试基线：从 100 一路到 **124 passed**（policy 21、host 29、adapter 40、web 8、core 21、base 5）；
+- ~~交付物检阅~~：取件单（60 秒 / 单文件 / 绑 sha256）、手机预览原件、
+  确认交付 / 打回；验收记录写 `artifact_decision`，文件变了 409
+- 测试基线：从 100 一路到 **130 passed**（policy 21、host 35、adapter 40、web 8、core 21、base 5）；
   命令用例在 adapter，策略只剩事实判定
 
 下一步按这个顺序：
@@ -192,9 +194,9 @@ C:\Users\1\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe 
    换 Agent 只加适配器
 5. ~~权限档位~~（已完成，卡见 `docs/task-permission-profiles.md`，ADR-0012）：
    默认工作区；完全权限需手机显式切换；硬禁止不变
-6. **交付物检阅**（下一张，卡：`docs/task-artifact-review.md`）：
-   产出原件可看、确认交付/打回，验收绑定 sha256
-7. **token 从 query 挪到 hash**（要动二维码 / 启动器 / 文档）
+6. ~~交付物检阅~~（已完成，卡见 `docs/task-artifact-review.md`，ADR-0013）：
+   取件单 60 秒 / 单文件，验收重算 sha256，手机可预览并确认/打回
+7. **token 从 query 挪到 hash**（下一张；要动二维码 / 启动器 / 文档）
 
 先别做的：真机上的点击/打字（要另立协议）；多电脑。
 

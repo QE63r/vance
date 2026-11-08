@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -630,5 +630,116 @@ describe("权限档位（host）", () => {
 
     const [hello] = await listen(port, "pf2", 1);
     expect(hello.profile).toBe("full");
+  });
+});
+
+describe("交付物检阅（ticket / accept）", () => {
+  const setup = async (ttl = 60_000) => {
+    const dir = mkdtempSync(join(tmpdir(), "vance-art-"));
+    tempDirs.push(dir);
+    const file = join(dir, "交付说明.txt");
+    writeFileSync(file, "hello artifact");
+    const other = join(dir, "b.txt");
+    writeFileSync(other, "not in the list");
+
+    const hist = historyFile();
+    const s = makeServer({ port: 0, token: "art1", pagePath: PAGE, approveAllDevices: true, historyFile: hist, artifactTicketTtlMs: ttl });
+    s.useSession("ses_art", "产出");
+    const { port } = await s.start();
+    s.broadcastArtifacts({ turnId: "t1", added: [file], changed: [], removed: [], warnings: [] });
+    return { s, port, file, other, hist };
+  };
+
+  it("签发取件单要 token", async () => {
+    const { port, file } = await setup();
+    const res = await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: file }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it("只允许产出清单里的路径", async () => {
+    const { port, other } = await setup();
+    const res = await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "art1" },
+      body: JSON.stringify({ path: other }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("票据能取到原件，且不需要主 token", async () => {
+    const { port, file } = await setup();
+    const body = (await (
+      await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vance-token": "art1" },
+        body: JSON.stringify({ path: file }),
+      })
+    ).json()) as any;
+    expect(body.sha256).toMatch(/^[a-f0-9]{64}$/);
+
+    const got = await fetch(`http://127.0.0.1:${port}/artifacts/${body.ticket}`);
+    expect(got.status).toBe(200);
+    expect(await got.text()).toBe("hello artifact");
+  });
+
+  it("票据过期后 410", async () => {
+    const { port, file } = await setup(5);
+    const body = (await (
+      await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vance-token": "art1" },
+        body: JSON.stringify({ path: file }),
+      })
+    ).json()) as any;
+    await new Promise((r) => setTimeout(r, 30));
+    const got = await fetch(`http://127.0.0.1:${port}/artifacts/${body.ticket}`);
+    expect(got.status).toBe(410);
+  });
+
+  it("文件变了，验收 409", async () => {
+    const { port, file } = await setup();
+    const body = (await (
+      await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vance-token": "art1" },
+        body: JSON.stringify({ path: file }),
+      })
+    ).json()) as any;
+    writeFileSync(file, "changed after review");
+
+    const res = await fetch(`http://127.0.0.1:${port}/artifacts/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "art1" },
+      body: JSON.stringify({ ticket: body.ticket, decision: "accept" }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it("验收成功写 artifact_decision，含 sha256", async () => {
+    const { port, file, hist } = await setup();
+    const body = (await (
+      await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vance-token": "art1" },
+        body: JSON.stringify({ path: file }),
+      })
+    ).json()) as any;
+
+    const res = await fetch(`http://127.0.0.1:${port}/artifacts/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "art1" },
+      body: JSON.stringify({ ticket: body.ticket, decision: "accept" }),
+    });
+    expect(res.status).toBe(200);
+
+    const line = readFileSync(hist, "utf8").trim().split("\n").pop() ?? "";
+    const entry = JSON.parse(line);
+    expect(entry.msg.type).toBe("artifact_decision");
+    expect(entry.msg.sha256).toBe(body.sha256);
+    expect(entry.msg.decision).toBe("accept");
   });
 });

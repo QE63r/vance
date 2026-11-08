@@ -7,12 +7,14 @@ import { Timeline } from "../ui/Timeline";
 import { Composer } from "../ui/Composer";
 import { ScreenMini } from "../ui/ScreenMini";
 import { ArtifactsSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
+import { ArtifactPreview } from "../ui/ArtifactPreview";
 
 export function App() {
   const s = useVance();
   const [now, setNow] = useState(() => Date.now());
   const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules" | "profile">(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
+  const [artifactPath, setArtifactPath] = useState<string | null>(null);
   const [rules, setRules] = useState<string[]>([]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stick = useRef(true);
@@ -163,7 +165,16 @@ export function App() {
 
       <ScreenMini ready={linkReady(s)} />
 
-      {sheet === "artifacts" && result && <ArtifactsSheet data={result} onClose={() => setSheet(null)} />}
+      {sheet === "artifacts" && result && (
+        <ArtifactsSheet
+          data={result}
+          onOpen={(p) => {
+            setSheet(null);
+            setArtifactPath(p);
+          }}
+          onClose={() => setSheet(null)}
+        />
+      )}
       {sheet === "menu" && (
         <MenuSheet
           onSessions={openSessions}
@@ -179,6 +190,7 @@ export function App() {
       {sheet === "profile" && (
         <ProfileSheet profile={s.profile} onPick={pickProfile} onClose={() => setSheet(null)} />
       )}
+      {artifactPath && <ArtifactPreview path={artifactPath} onClose={() => setArtifactPath(null)} />}
       {s.device.incoming.length > 0 && (
         <DeviceSheet
           request={s.device.incoming[0]}
