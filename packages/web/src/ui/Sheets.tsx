@@ -22,7 +22,15 @@ function shortPath(p: string): string {
   return parts.slice(-2).join("\\");
 }
 
-export function ArtifactsSheet({ data, onClose }: { data: ArtifactsPayload; onClose: () => void }) {
+export function ArtifactsSheet({
+  data,
+  onOpen,
+  onClose,
+}: {
+  data: ArtifactsPayload;
+  onOpen: (path: string) => void;
+  onClose: () => void;
+}) {
   const groups: Array<[string, string[]]> = [
     ["新增", data.added],
     ["改动", data.changed],
@@ -45,14 +53,14 @@ export function ArtifactsSheet({ data, onClose }: { data: ArtifactsPayload; onCl
               {label} {list.length}
             </div>
             {list.map((p) => (
-              <div className="file" key={p} title={p}>
+              <button className="file" key={p} type="button" title={p} onClick={() => onOpen(p)}>
                 {shortPath(p)}
-              </div>
+              </button>
             ))}
           </div>
         ),
       )}
-      <div className="sheet-note">手机上打不开这些文件；要看得去电脑上。</div>
+      <div className="sheet-note">点文件看原件；看完确认交付，或打回重做。</div>
     </Sheet>
   );
 }
