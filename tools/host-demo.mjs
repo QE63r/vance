@@ -1,7 +1,7 @@
 // 把三块接起来：Host 网页 + ACP Agent + 决定回传。
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { createHash, randomBytes } from "node:crypto";
-import { execSync, spawn } from "node:child_process";
+import { execSync, execFileSync, spawn } from "node:child_process";
 import { basename, dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
@@ -301,12 +301,21 @@ if (USE_TUNNEL) {
   ];
   const exe = CANDIDATES.find((p) => p === "cloudflared" || existsSync(p)) ?? "cloudflared";
 
-  // 如果隧道已经由 Tailscale Funnel 提供，直接用它（地址永久固定）
+  // 如果隧道已经由 Tailscale Funnel 提供，直接用它（地址永久固定）。
+  // v 的 PATH 里没有 tailscale，所以不能只靠命令名，必须找绝对路径。
   let funnelDone = false;
+  const TS_CANDIDATES = [
+    "C:\\Program Files\\Tailscale\\tailscale.exe",
+    "C:\\Program Files (x86)\\Tailscale\\tailscale.exe",
+    "tailscale",
+  ];
+  const tsExe = TS_CANDIDATES.find((p) => p === "tailscale" || existsSync(p)) ?? "tailscale";
   try {
-    const out = execSync("tailscale funnel status", { encoding: "utf8", timeout: 5000 });
-    const m = out.match(/https:\/\/[a-z0-9-]+\.ts\.net\/?/i);
-    if (m) {
+    const out = execFileSync(tsExe, ["funnel", "status"], { encoding: "utf8", timeout: 5000 });
+    // Tailscale 的主机名可能是 desktop-xxx.tailnet-id.ts.net（多段子域名）
+    const m = out.match(/https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net\/?/i);
+    const proxiesThisPort = new RegExp(`proxy\\s+http://127\\.0\\.0\\.1:${port}\\b`).test(out);
+    if (m && proxiesThisPort) {
       const publicUrl = `${m[0].replace(/\/$/, "")}/app/?token=${token}`;
       console.log("");
       console.log("  ── 公网地址（Tailscale Funnel，永久固定）──────");
@@ -321,6 +330,11 @@ if (USE_TUNNEL) {
       } catch {}
       console.log("");
       funnelDone = true;
+    } else if (m && !proxiesThisPort) {
+      console.log("");
+      console.log(`  ⚠ Tailscale Funnel 开着，但没有指向 127.0.0.1:${port}；先不用它。`);
+      console.log(`     要固定地址：tailscale funnel --bg ${port}`);
+      console.log("");
     }
   } catch {}
 
