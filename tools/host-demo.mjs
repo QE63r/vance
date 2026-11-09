@@ -530,6 +530,10 @@ const client = new AcpClient(
         }
       }, 180_000);
     },
+    onError: (message) => {
+      console.log("  [acp] 错误：" + String(message).slice(0, 160));
+      host.broadcastNotice("deny", `Agent 出错：${String(message).slice(0, 160)}`);
+    },
     onLog: (line) => console.log("  [acp] " + String(line).slice(0, 120)),
   },
 );

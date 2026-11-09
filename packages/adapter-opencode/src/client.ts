@@ -37,6 +37,8 @@ export interface ClientHandlers {
    * 不调 reply 就等于一直挂着——直到超时由外层处置。
    */
   onApproval: (event: ApprovalRequest, reply: (decision: "allow" | "reject") => void) => void;
+  /** Agent/协议返回的错误；必须能被外层送到手机上，不能只写终端日志 */
+  onError?: (message: string) => void;
   onLog?: (line: string) => void;
 }
 
@@ -178,7 +180,11 @@ export class AcpClient {
       // 这一轮的应答（不管成功还是失败）都必须收尾，
       // 否则界面会永远停在"正在执行"，人也发不出下一句。
       if (this.turnId !== null && msg.id === this.turnId) {
-        if (msg.error) this.log(`[acp] prompt 失败：${JSON.stringify(msg.error).slice(0, 140)}`);
+        if (msg.error) {
+          const text = String(msg.error?.message ?? JSON.stringify(msg.error));
+          this.handlers.onError?.(text);
+          this.log(`[acp] prompt 失败：${JSON.stringify(msg.error).slice(0, 140)}`);
+        }
         this.settled?.(msg.error ? "error" : String(msg.result?.stopReason ?? "end_turn"));
         this.settled = null;
         this.turnId = null;
