@@ -30,15 +30,17 @@ export function App() {
   }, []);
 
   // 贴底时自动跟随；用户手动上翻后不抢。
-  // 但"自己刚发的消息"必须可见：键盘弹出会把贴底开关冲掉，
-  // 所以最后一条是 user 时无条件滚到底。
+  // 只在时间线内容变化时跟随——不要把每秒的倒计时也当成"该滚了"。
+  // "自己刚发的消息"必须可见：键盘弹出会把贴底开关冲掉，所以 user 无条件到底。
+  const lastItem = s.timeline[s.timeline.length - 1];
+  const streamLen = lastItem?.kind === "agent" ? lastItem.text.length : 0;
+
   useEffect(() => {
     const el = feedRef.current;
     if (!el) return;
-    const last = s.timeline[s.timeline.length - 1];
-    if (!stick.current && last?.kind !== "user") return;
+    if (!stick.current && lastItem?.kind !== "user") return;
     el.scrollTop = el.scrollHeight;
-  }, [s.timeline.length, s.approvals, now]);
+  }, [s.timeline.length, s.approvals, lastItem?.id, streamLen, lastItem?.kind]);
 
   const pending = pendingCount(s);
   const artifacts = latestArtifacts(s);
@@ -128,7 +130,8 @@ export function App() {
         ref={feedRef}
         onScroll={(e) => {
           const el = e.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          // 只认"真的在底部"：24px 内。否则轻微上滑会被当成贴底又拽回去。
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
         }}
       >
         <Timeline state={s} now={now} />
