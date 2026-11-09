@@ -4,7 +4,6 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import qrcode from "qrcode-terminal";
 import QRCode from "qrcode";
 import { lanEntries } from "../packages/host/dist/index.js";
 
@@ -74,21 +73,6 @@ const fixedOk = fixed ? await healthy(fixed) : false;
 const tunOk = !fixedOk && tun ? await healthy(tun) : false;
 const target = fixedOk ? fixed : tunOk ? tun : lanUrl(tk);
 
-console.log("");
-console.log("  ────────────────────────────────────────");
-if (fixedOk) {
-  console.log("  【固定】手机用流量也能连，扫这个（重启后地址不变）：");
-} else if (tunOk) {
-  console.log("  【公网】手机用流量 / 不在同一个 wifi 时，扫这个：");
-} else {
-  if (tun) console.log("  ⚠ 公网隧道没连通或已过期，下面改用局域网地址：");
-  else console.log("  【局域网】手机和电脑连同一个 wifi 时，扫这个：");
-}
-console.log("");
-console.log(`  ${target}`);
-console.log("");
-qrcode.generate(target, { small: true });
-console.log("");
 try {
   await QRCode.toFile(join(homedir(), ".vance", "qr.png"), target, {
     width: 720,
@@ -96,7 +80,26 @@ try {
     color: { dark: "#11181f", light: "#ffffff" },
   });
 } catch {}
-console.log("  扫不到就手动输入上面的地址。");
+
+// 清屏再打码：终端窗口不高时，32 行的旧码会把二维码顶出可见区。
+// 这里换成 23 行的半高块，白底黑码，手机更容易扫。
+if (process.stdout.isTTY) console.clear();
+if (fixedOk) {
+  console.log("  手机扫这个（固定入口；扫不到就手动输下面的地址）：");
+} else if (tunOk) {
+  console.log("  手机扫这个（公网；扫不到就手动输下面的地址）：");
+} else {
+  console.log("  手机扫这个（局域网；扫不到就手动输下面的地址）：");
+}
+console.log(`  ${target}`);
+try {
+  const art = await QRCode.toString(target, {
+    type: "terminal",
+    small: true,
+    errorCorrectionLevel: "L",
+  });
+  console.log(art.trimEnd());
+} catch {
+  console.log("  （二维码生成失败，请手动输入上面的地址）");
+}
 if (!fixedOk && !tunOk) console.log("  要公网：先确认 Tailscale Funnel，或重启 host 等公网隧道。");
-console.log("  ────────────────────────────────────────");
-console.log("");
