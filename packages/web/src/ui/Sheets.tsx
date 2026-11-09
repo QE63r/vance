@@ -211,6 +211,9 @@ export interface SessionRow {
   id: string;
   title: string;
   active: boolean;
+  status?: "running" | "idle" | "stopped" | string;
+  pending?: number;
+  artifacts?: number;
 }
 
 export function MenuSheet({
@@ -251,7 +254,7 @@ export function MenuSheet({
         <span className="menu-arrow">›</span>
       </button>
       <div className="sheet-note">
-        切任务只改"看哪条"，不会停掉正在跑的那条。
+        “查看”只换视角；“切到此任务”才会把指令/审批交给它。
         <br />
         “忘记这台设备”只清这台手机的本地配对信息，电脑上的记录不会删。
       </div>
@@ -298,31 +301,50 @@ export function SessionsSheet({
   sessions,
   currentId,
   onPick,
+  onNew,
+  onSwitch,
   onClose,
 }: {
   sessions: SessionRow[];
   currentId: string;
   onPick: (id: string) => void;
+  onNew: () => void;
+  onSwitch: (id: string) => void;
   onClose: () => void;
 }) {
+  const stateText: Record<string, string> = { running: "执行中", idle: "空闲", stopped: "已停止" };
   return (
     <Sheet title="任务" onClose={onClose}>
+      <button className="session-new" type="button" onClick={onNew}>
+        + 新建任务
+      </button>
       {sessions.length === 0 && <div className="sheet-empty">还没有任务</div>}
       {sessions.map((s) => (
-        <button
-          key={s.id}
-          className={`session-row${s.id === currentId ? " current" : ""}`}
-          type="button"
-          onClick={() => onPick(s.id)}
-        >
-          <span className="session-title">{s.title || s.id}</span>
-          <span className="session-meta">
-            {s.active ? "当前会话" : "历史"}
-            {s.id === currentId ? " · 正在看" : ""}
-          </span>
-        </button>
+        <div key={s.id} className={`session-row${s.id === currentId ? " current" : ""}`}>
+          <button className="session-open" type="button" onClick={() => onPick(s.id)}>
+            <span className="session-title">{s.title || s.id}</span>
+            <span className="session-meta">
+              {s.active ? "当前执行会话" : "历史"}
+              {s.id === currentId ? " · 正在看" : ""}
+              {typeof s.pending === "number" && s.pending > 0 ? ` · 待批 ${s.pending}` : ""}
+              {typeof s.artifacts === "number" && s.artifacts > 0 ? ` · 产出 ${s.artifacts}` : ""}
+            </span>
+          </button>
+          <div className="session-actions">
+            <span className={`session-state ${s.status ?? "idle"}`}>{stateText[s.status ?? "idle"] ?? "空闲"}</span>
+            {!s.active && (
+              <button className="session-switch" type="button" onClick={() => onSwitch(s.id)}>
+                切到此任务
+              </button>
+            )}
+          </div>
+        </div>
       ))}
-      <div className="sheet-note">旧账（legacy）是加 session_id 之前的记录，只读。</div>
+      <div className="sheet-note">
+        “查看”只换视角；“切到此任务”才会把指令/审批交给它。任务在跑时不能切。
+        <br />
+        旧账（legacy）是加 session_id 之前的记录，只读。
+      </div>
     </Sheet>
   );
 }

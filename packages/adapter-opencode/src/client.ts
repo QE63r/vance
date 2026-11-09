@@ -51,6 +51,14 @@ export class AcpClient {
   private settled: ((reason: string) => void) | null = null;
   /** 当前这一轮 session/prompt 的 JSON-RPC id；用它来收尾 */
   private turnId: number | null = null;
+  /** 新建/切换会话的请求；同一时间只允许一个 */
+  private pendingSession: {
+    id: number;
+    kind: "new" | "load";
+    requested?: string;
+    resolve: (id: string) => void;
+    reject: (e: Error) => void;
+  } | null = null;
 
   constructor(
     options: ClientOptions,
@@ -122,6 +130,41 @@ export class AcpClient {
   }
 
   /**
+   * 在同一 Agent 进程里开一个新会话。
+   * 旧会话仍留在 opencode 里；要回去用 loadSession，不要 restart。
+   */
+  newSession(): Promise<string> {
+    if (!this.sessionId) return Promise.reject(new Error("session not started"));
+    if (this.pendingSession) return Promise.reject(new Error("session switch in progress"));
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      this.pendingSession = { id, kind: "new", resolve, reject };
+      this.send({
+        jsonrpc: "2.0",
+        id,
+        method: "session/new",
+        params: { cwd: this.opts.cwd, mcpServers: [] },
+      });
+    });
+  }
+
+  /** 切到已有会话；不重启 Agent，旧会话仍可回来 */
+  loadSession(sessionId: string): Promise<string> {
+    if (!this.sessionId) return Promise.reject(new Error("session not started"));
+    if (this.pendingSession) return Promise.reject(new Error("session switch in progress"));
+    return new Promise((resolve, reject) => {
+      const id = this.nextId++;
+      this.pendingSession = { id, kind: "load", requested: sessionId, resolve, reject };
+      this.send({
+        jsonrpc: "2.0",
+        id,
+        method: "session/load",
+        params: { sessionId, cwd: this.opts.cwd, mcpServers: [] },
+      });
+    });
+  }
+
+  /**
    * 强制终止 Agent 进程。
    * cancel 只是"请求"，Agent 完全可以不理；这个才是真的按住它。
    * Windows 上直接 taskkill /T，连子进程一起收掉。
@@ -177,6 +220,25 @@ export class AcpClient {
 
     // 响应：协议自身的握手
     if (msg.id !== undefined && msg.method === undefined) {
+      // 新建/切换会话的应答优先处理：它不是一轮 prompt
+      if (this.pendingSession && msg.id === this.pendingSession.id) {
+        const pending = this.pendingSession;
+        this.pendingSession = null;
+        if (msg.error) {
+          pending.reject(new Error(String(msg.error?.message ?? JSON.stringify(msg.error))));
+          return;
+        }
+        const result = msg.result ?? {};
+        const nextId = String(result.sessionId ?? pending.requested ?? this.sessionId ?? "");
+        if (!nextId) {
+          pending.reject(new Error("session id missing"));
+          return;
+        }
+        this.sessionId = nextId;
+        pending.resolve(nextId);
+        return;
+      }
+
       // 这一轮的应答（不管成功还是失败）都必须收尾，
       // 否则界面会永远停在"正在执行"，人也发不出下一句。
       if (this.turnId !== null && msg.id === this.turnId) {

@@ -89,6 +89,16 @@ export function App() {
     setSheet(null);
   };
 
+  const newTask = () => {
+    send({ type: "session/new" });
+    setSheet(null);
+  };
+
+  const switchTask = (id: string) => {
+    send({ type: "session/switch", sessionId: id });
+    setSheet(null);
+  };
+
   const pickProfile = async (profile: Profile) => {
     try {
       const res = await fetch("/profile", {
@@ -217,7 +227,14 @@ export function App() {
         />
       )}
       {sheet === "sessions" && (
-        <SessionsSheet sessions={sessions} currentId={s.sessionId} onPick={pickSession} onClose={() => setSheet(null)} />
+        <SessionsSheet
+          sessions={sessions}
+          currentId={s.sessionId}
+          onPick={pickSession}
+          onNew={newTask}
+          onSwitch={switchTask}
+          onClose={() => setSheet(null)}
+        />
       )}
       {sheet === "rules" && <RulesSheet rules={rules} onRevoke={revokeRule} onClose={() => setSheet(null)} />}
       {sheet === "profile" && (

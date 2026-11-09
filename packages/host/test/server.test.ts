@@ -688,6 +688,35 @@ describe("权限档位（host）", () => {
   });
 });
 
+describe("任务生命周期（session/new 与 session/switch）", () => {
+  it("手机能新建任务，也能真正切回旧任务", async () => {
+    const s = makeServer({ port: 0, token: "life1", pagePath: PAGE, approveAllDevices: true });
+    server = s;
+    let switched = "";
+    s.onSessionNew(async () => "ses_new");
+    s.onSessionSwitch(async (id) => {
+      switched = id;
+    });
+    s.useSession("ses_old", "旧任务");
+    const { port } = await s.start();
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=life1&device=life-test`);
+    await waitForMessage(ws, (m) => m.type === "hello");
+
+    const made = waitForMessage(ws, (m) => m.type === "session" && m.session_id === "ses_new");
+    ws.send(JSON.stringify({ type: "session/new" }));
+    const newEvent = await made;
+    expect(newEvent.active).toBe(true);
+
+    const back = waitForMessage(ws, (m) => m.type === "session" && m.session_id === "ses_old");
+    ws.send(JSON.stringify({ type: "session/switch", sessionId: "ses_old" }));
+    const oldEvent = await back;
+    expect(oldEvent.active).toBe(true);
+    expect(switched).toBe("ses_old");
+    ws.close();
+  });
+});
+
 describe("交付物仓库（索引 / 状态 / 历史取件）", () => {
   const setup = async () => {
     const dir = mkdtempSync(join(tmpdir(), "vance-repo-"));

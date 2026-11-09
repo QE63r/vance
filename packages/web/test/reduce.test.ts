@@ -145,9 +145,14 @@ describe("空会话", () => {
     expect(canSend(s)).toBe(true);
     expect(s.sessionId).toBe("ses_x");
 
-    // 切会话：只改"在看哪条"
+    // 旧任务的时间线不能跟着新会话留下
+    s = reduce(s, { type: "msg", msg: { type: "user", text: "旧任务" } });
+    expect(s.timeline).toHaveLength(1);
+
+    // 切会话：换 id，先清空时间线；history 随后重建
     s = reduce(s, { type: "msg", msg: { type: "session", session_id: "ses_y", title: "Y", active: false } });
     expect(s.sessionId).toBe("ses_y");
+    expect(s.timeline).toHaveLength(0);
   });
 
   it("本地先画的那句，服务端回显只确认、不重复", () => {

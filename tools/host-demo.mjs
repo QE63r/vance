@@ -539,7 +539,7 @@ const client = new AcpClient(
   },
 );
 
-const sessionId = await client.start();
+let sessionId = await client.start();
 // 会话一就绪就告诉 host：晚连的手机靠它拿到 session_id，早连的会收到一条 session 通知
 host.useSession(sessionId, basename(CWD));
 try {
@@ -548,6 +548,27 @@ try {
 } catch {}
 console.log("  session: " + sessionId);
 console.log("");
+
+// 任务生命周期：新开 / 真正切换。都要求当前没有一轮在跑，避免两轮抢同一个 ACP。
+host.onSessionNew(async () => {
+  if (running) throw new Error("任务在跑，先停");
+  const id = await client.newSession();
+  sessionId = id;
+  try {
+    writeFileSync(SESSION_FILE, JSON.stringify({ id, at: Date.now() }));
+  } catch {}
+  console.log("  新任务 session: " + id);
+  return id;
+});
+host.onSessionSwitch(async (id) => {
+  if (running) throw new Error("任务在跑，先停");
+  await client.loadSession(id);
+  sessionId = id;
+  try {
+    writeFileSync(SESSION_FILE, JSON.stringify({ id, at: Date.now() }));
+  } catch {}
+  console.log("  切到 session: " + id);
+});
 
 
 // 手机上发来的指令 → 交给 Agent 接着干

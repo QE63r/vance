@@ -218,6 +218,9 @@ export class HostServer {
   private handler: DecisionHandler | null = null;
   private promptHandler: ((text: string) => void) | null = null;
   private stopHandler: (() => void) | null = null;
+  private sessionNewHandler: (() => Promise<string>) | null = null;
+  private sessionSwitchHandler: ((sessionId: string) => Promise<void>) | null = null;
+  private turnState: "running" | "idle" | "stopped" = "idle";
   private shotHandler: (() => Promise<string | null>) | null = null;
   private readonly tokens: Set<string>;
   /**
@@ -459,6 +462,16 @@ export class HostServer {
     this.stopHandler = handler;
   }
 
+  /** 手机要求开新任务：由启动器去开 ACP 会话，host 只登记 */
+  onSessionNew(handler: () => Promise<string>): void {
+    this.sessionNewHandler = handler;
+  }
+
+  /** 手机要求真正切到另一条会话：由启动器让 Agent load 它 */
+  onSessionSwitch(handler: (sessionId: string) => Promise<void>): void {
+    this.sessionSwitchHandler = handler;
+  }
+
   /** 手机要看一眼屏幕；返回 data URL，失败返回 null */
   onScreenshot(handler: () => Promise<string | null>): void {
     this.shotHandler = handler;
@@ -558,6 +571,7 @@ export class HostServer {
 
   /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
   broadcastTurn(state: "running" | "idle" | "stopped"): void {
+    this.turnState = state;
     this.emit({ type: "turn", state });
   }
 
@@ -1034,7 +1048,16 @@ export class HostServer {
           return;
         }
         const sessions = [...this.sessions.values()]
-          .map((s) => ({ ...s, active: s.id === this.activeSessionId }))
+          .map((s) => {
+            const active = s.id === this.activeSessionId;
+            return {
+              ...s,
+              active,
+              status: active ? this.turnState : "idle",
+              pending: [...this.pendingApprovals.values()].filter((p) => p.sessionId === s.id).length,
+              artifacts: this.artifactRecords.filter((r) => r.session_id === s.id).length,
+            };
+          })
           .sort((a, b) => b.updated_at - a.updated_at);
         res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         res.end(req.method === "HEAD" ? undefined : JSON.stringify({ sessions }));
@@ -1312,6 +1335,66 @@ export class HostServer {
         if (pending.sessionId !== view) continue;
         socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: view }));
       }
+      return;
+    }
+    if (msg?.type === "session/new") {
+      if (!this.sessionNewHandler) {
+        socket.send(JSON.stringify({ type: "notice", level: "deny", session_id: device.viewSessionId, text: "这台 host 不支持新建任务" }));
+        return;
+      }
+      void (async () => {
+        try {
+          const id = await this.sessionNewHandler!();
+          this.useSession(id, "新任务");
+        } catch (err) {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(
+              JSON.stringify({
+                type: "notice",
+                level: "deny",
+                session_id: device.viewSessionId,
+                text: `新建任务失败：${String((err as Error)?.message ?? err).slice(0, 120)}`,
+              }),
+            );
+          }
+        }
+      })();
+      return;
+    }
+    if (msg?.type === "session/switch" && typeof msg.sessionId === "string") {
+      const target = this.sessions.get(msg.sessionId);
+      if (!target) {
+        socket.send(JSON.stringify({ type: "notice", level: "deny", session_id: device.viewSessionId, text: `会话 ${msg.sessionId} 不存在` }));
+        return;
+      }
+      if (!this.sessionSwitchHandler) {
+        socket.send(JSON.stringify({ type: "notice", level: "deny", session_id: device.viewSessionId, text: "这台 host 不支持切换任务" }));
+        return;
+      }
+      void (async () => {
+        try {
+          await this.sessionSwitchHandler!(target.id);
+          this.useSession(target.id, target.title);
+          device.viewSessionId = target.id;
+          const past = this.historyFor(target.id);
+          if (past.length > 0) socket.send(JSON.stringify({ type: "history", session_id: target.id, items: past }));
+          for (const pending of this.pendingApprovals.values()) {
+            if (pending.sessionId !== target.id) continue;
+            socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: target.id }));
+          }
+        } catch (err) {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(
+              JSON.stringify({
+                type: "notice",
+                level: "deny",
+                session_id: device.viewSessionId,
+                text: `切换任务失败：${String((err as Error)?.message ?? err).slice(0, 120)}`,
+              }),
+            );
+          }
+        }
+      })();
       return;
     }
     if (msg?.type === "session/attach" && typeof msg.sessionId === "string") {

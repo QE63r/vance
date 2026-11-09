@@ -290,9 +290,19 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
     case "device_approved":
       return { ...s, device: { ...s.device, phase: "trusted" } };
 
-    // 会话就绪/切换：换的是"正在看哪条"，不碰时间线（history 会来重建）
-    case "session":
-      return { ...s, sessionId: msg.session_id };
+    // 会话就绪/切换：换的是"正在看哪条"。先清空，等 history 重建；
+    // 新建任务没有 history，不清就会把上一条的时间线留在新任务里。
+    case "session": {
+      if (s.sessionId === msg.session_id) return s;
+      return {
+        ...s,
+        sessionId: msg.session_id,
+        timeline: [],
+        approvals: {},
+        exec: { phase: "unknown" },
+        lastEventAt: null,
+      };
+    }
 
     case "profile":
       return { ...s, profile: msg.profile };
