@@ -5,7 +5,7 @@
  * 原则（对应 ADR-0002 D1）：
  *   · 只落盘，不改写、不解析后重拼、不"美化"
  *   · 文件名就是 raw_digest —— 内容寻址，和信封里的 raw_digest 对得上
- *   · 任何异常都必须输出 deny（fail-closed），绝不能静默放行
+ *   · 任何异常都必须输出 deny（fail-closed），绝不能悄悄放行
  *
  * 用法：由 Claude Code 通过 .claude/settings.json 调用，
  * payload 从 stdin 进来，我们的决定从 stdout 出去。

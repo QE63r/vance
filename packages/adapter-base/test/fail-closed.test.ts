@@ -53,7 +53,7 @@ describe("fail-closed 基类", () => {
     });
   });
 
-  it("不认识的事件拒绝，而不是静默放行", () => {
+  it("不认识的事件拒绝，而不是悄悄放行", () => {
     expect(new TestAdapter("null").handle({}, ctx())).toEqual({
       decision: "DENY",
       reason: "unknown_event",

@@ -108,7 +108,7 @@ function approval() {
 /** 先放一轮「已经做完的活」进历史：这样首屏就有时间线、结算条和产出可点 */
 function seed() {
   emit({ type: "user", text: "把桌面的报告转成 PDF，再核一下目录。" });
-  emit({ type: "notice", level: "auto", text: "已静默放行：读取项目目录" });
+  emit({ type: "notice", level: "auto", text: "已自动放行（免问）：读取项目目录" });
   emit({ type: "turn", state: "running" });
   emit(statusEvent(step("h1", "核对目录页码", "read", "done")));
   emit({ type: "chat", role: "agent", messageId: "seed-1", text: "上一次转换已经完成，这次接着改目录。" });

@@ -561,7 +561,7 @@ export class HostServer {
     this.emit({ type: "turn", state });
   }
 
-  /** 系统提示：被策略拦截、静默放行之类，不是 Agent 说的话 */
+  /** 系统提示：被策略拦截、自动放行（免问）之类，不是 Agent 说的话 */
   broadcastNotice(level: "deny" | "auto", text: string): void {
     this.emit({ type: "notice", level, text });
   }

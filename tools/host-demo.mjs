@@ -486,10 +486,10 @@ const client = new AcpClient(
       }
 
       if (verdict.auto) {
-        console.log(`  · 静默放行（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
+        console.log(`  · 自动放行（${verdict.reason}）：${String(event.action_display).slice(0, 46)}`);
         // 纯读太频繁，不上时间线；写/跑脚本才值得让用户知道
         if (event.facts?.effect !== "read") {
-          host.broadcastNotice("auto", `已静默放行：${String(event.action_display).slice(0, 40)}`);
+          host.broadcastNotice("auto", `已自动放行（免问）：${String(event.action_display).slice(0, 40)}`);
         }
         reply("allow");
         return;

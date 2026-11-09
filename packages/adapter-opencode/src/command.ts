@@ -17,7 +17,7 @@ const ASK = (reason: string): CommandVerdict => ({ auto: false, reason });
 const ALLOW = (reason: string): CommandVerdict => ({ auto: true, reason });
 const DENY = (reason: string): CommandVerdict => ({ auto: false, deny: true, reason });
 
-/** 允许静默放行的命令（只读类）。每条都可以带任意参数。 */
+/** 允许自动放行的命令（只读类，免问）。每条都可以带任意参数。 */
 const READ_ONLY = new Set([
   "get-childitem", "get-content", "get-item", "test-path", "select-string",
   "measure-object", "select-object", "sort-object", "format-table", "format-list",
@@ -53,7 +53,7 @@ export function dangerOf(command: string): string | null {
   return null;
 }
 
-/** 判断一条 shell 命令能否静默放行（只读意图） */
+/** 判断一条 shell 命令能否自动放行（只读意图，免问） */
 export function classifyCommand(command: string): CommandVerdict {
   const cmd = command.trim();
   if (!cmd) return ASK("空命令");

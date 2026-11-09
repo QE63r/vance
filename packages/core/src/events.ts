@@ -42,7 +42,7 @@ export const EVENT_TYPE = z.enum(EVENT_TYPES);
  * 风险三级。
  *
  * [重要] 它不是线上字段，不出现在任何事件里 —— 由治理层根据 facts 计算。
- * 发送方（适配器 / Agent）无权声明风险，否则它可以自报 low 换取静默放行。
+ * 发送方（适配器 / Agent）无权声明风险，否则它可以自报 low 换取自动放行。
  */
 export const RiskLevel = z.enum(["low", "medium", "high"]);
 export type RiskLevel = z.infer<typeof RiskLevel>;
