@@ -178,9 +178,8 @@ const host = new HostServer({
   webDir: WEB_DIR,
   projectName: "sandbox",
   deviceStorePath: join(homedir(), ".vance", "devices.json"),
-  // [学习注] 仅用于首次接入/排障的临时开关：VANCE_APPROVE_ALL=1 时新设备免审批。
-  // 默认关闭；不要把它当长期配置，配对流程仍应走“已有设备点头”。
-  approveAllDevices: process.env.VANCE_APPROVE_ALL === "1",
+  // 不启用 approveAllDevices：配对只走“首台自动信任 / 已记录设备”。
+  // 临时免审批只留给单测，不在启动器里开。
 });
 
 // 规则只在启动器手里：host 通过这两个口查询/撤销，不直接读 rules.json
