@@ -1051,3 +1051,117 @@ button:disabled {
   border: 0;
   background: #0b1015;
 }
+
+/* ── 配对页（PWA 首次 / 忘记设备后） ── */
+.pair {
+  min-height: 100dvh;
+  max-width: 430px;
+  margin: 0 auto;
+  padding: calc(48px + env(safe-area-inset-top)) 24px calc(28px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: radial-gradient(120% 70% at 50% 0%, #0d1622 0%, #070b10 60%);
+  border-inline: 1px solid #101822;
+}
+
+.pair-mark {
+  width: 62px;
+  height: 62px;
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 22px;
+  border: 1px solid #223041;
+  background: #0b0f14;
+  color: #e6edf3;
+  font-size: 30px;
+  font-weight: 700;
+  box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.07);
+}
+
+.pair-title {
+  margin: 0 0 10px;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.pair-desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.pair-desc b {
+  color: #cbd5e1;
+  font-weight: 600;
+}
+
+.pair-form {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pair-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 13px;
+  border-radius: 12px;
+  border: 1px solid #223041;
+  background: #0f1722;
+  color: var(--text);
+  font-family: inherit;
+  /* 16px：iOS 聚焦时不会自动放大 */
+  font-size: 16px;
+  outline: none;
+}
+
+.pair-input:focus {
+  border-color: #2d4a6b;
+}
+
+.pair-input::placeholder {
+  color: #5f6b78;
+}
+
+.pair-btn {
+  height: 48px;
+  border: none;
+  border-radius: 12px;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.pair-btn:disabled {
+  background: #1b2532;
+  color: #5f6b78;
+}
+
+.pair-error {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #7f1d1d;
+  background: #1a0f12;
+  color: #fca5a5;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.pair-note {
+  margin-top: 26px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+.menu-row.danger span:first-child {
+  color: #fca5a5;
+}

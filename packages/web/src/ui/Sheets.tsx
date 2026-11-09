@@ -92,11 +92,13 @@ export function MenuSheet({
   onSessions,
   onRules,
   onProfile,
+  onForget,
   onClose,
 }: {
   onSessions: () => void;
   onRules: () => void;
   onProfile: () => void;
+  onForget: () => void;
   onClose: () => void;
 }) {
   return (
@@ -113,7 +115,15 @@ export function MenuSheet({
         <span>权限档位</span>
         <span className="menu-arrow">›</span>
       </button>
-      <div className="sheet-note">切任务只改"看哪条"，不会停掉正在跑的那条。</div>
+      <button className="menu-row danger" type="button" onClick={onForget}>
+        <span>忘记这台设备</span>
+        <span className="menu-arrow">›</span>
+      </button>
+      <div className="sheet-note">
+        切任务只改"看哪条"，不会停掉正在跑的那条。
+        <br />
+        “忘记这台设备”只清这台手机的本地配对信息，电脑上的记录不会删。
+      </div>
     </Sheet>
   );
 }

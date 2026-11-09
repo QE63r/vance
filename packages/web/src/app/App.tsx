@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { store, useVance } from "../model/store";
 import { pendingCount, canSend, canStop, hintText, linkText, execText, deviceText, linkReady, latestArtifacts } from "../model/selectors";
 import { send, getToken } from "../net/ws";
+import { clearCredentials } from "../net/credentials";
 import type { Profile } from "../model/types";
 import { Timeline } from "../ui/Timeline";
 import { Composer } from "../ui/Composer";
 import { ScreenMini } from "../ui/ScreenMini";
 import { ArtifactsSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
 import { ArtifactPreview } from "../ui/ArtifactPreview";
+import { PairScreen } from "./PairScreen";
 
 export function App() {
   const s = useVance();
@@ -101,6 +103,21 @@ export function App() {
 
   const PROFILE_TEXT: Record<Profile, string> = { "read-only": "只读", workspace: "工作区", full: "完全" };
 
+  const forget = () => {
+    if (!window.confirm("清掉这台手机的配对信息？下次要重新扫码。")) return;
+    clearCredentials(localStorage);
+    location.replace(location.pathname);
+  };
+
+  // 口令错 / 设备被拒：不再显示一个连不上的会话壳，直接回配对页
+  if (s.link.phase === "rejected" || s.link.phase === "denied") {
+    return (
+      <PairScreen
+        error={s.link.phase === "rejected" ? "口令无效，请重新配对。" : "这台设备被拒绝接入，请重新配对。"}
+      />
+    );
+  }
+
   return (
     <div className="app">
       <header className={`hdr link-${s.link.phase}`}>
@@ -183,6 +200,7 @@ export function App() {
           onSessions={openSessions}
           onRules={openRules}
           onProfile={() => setSheet("profile")}
+          onForget={forget}
           onClose={() => setSheet(null)}
         />
       )}

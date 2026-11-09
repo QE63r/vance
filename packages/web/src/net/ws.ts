@@ -1,6 +1,7 @@
 import { store } from "../model/store";
 import type { ClientMsg } from "../model/types";
 import { pushFrame } from "./frames";
+import { clearCredentials, isAuthCloseCode, type Credentials } from "./credentials";
 
 const RETRY_MS = [800, 1600, 3200, 8000];
 
@@ -12,30 +13,6 @@ let currentToken = "";
 /** 给 HTTP 接口用（/profile 等）：token 只放请求头，不进 URL */
 export function getToken(): string {
   return currentToken;
-}
-
-/** token 只从前端拿：地址 hash → 查询串 → sessionStorage → dev 默认值 */
-function readToken(): string {
-  const fromHash = new URLSearchParams(location.hash.replace(/^#/, "")).get("token");
-  const fromQuery = new URLSearchParams(location.search).get("token");
-  let stored: string | null = null;
-  try {
-    stored = sessionStorage.getItem("vance_token");
-  } catch {
-    stored = null;
-  }
-  const devFallback = import.meta.env.DEV ? "dev" : "";
-  const token = fromHash || fromQuery || stored || devFallback;
-  if (token) {
-    try {
-      sessionStorage.setItem("vance_token", token);
-    } catch {
-      /* 隐私模式下写不进去也不影响本次连接 */
-    }
-  }
-  // token 在 URL 里只出现这一次：立刻抹掉，别留在地址栏/截图/历史里
-  if (fromHash || fromQuery) history.replaceState(null, "", location.pathname);
-  return token;
 }
 
 /** 要看的会话：?session=<id>（或 hash）。没给就跟活动会话 */
@@ -70,10 +47,10 @@ export function send(msg: ClientMsg): boolean {
   return true;
 }
 
-export function boot(): void {
-  // 先读会话再读 token：readToken 会立刻清掉整个查询串
+export function boot(creds: Credentials): void {
+  // 地址里的 token 已由 resolveCredentials 读走并从地址栏抹掉；这里只留会话参数
   const session = readSession();
-  const token = readToken();
+  const token = creds.token;
   currentToken = token;
 
   const connect = (): void => {
@@ -104,8 +81,11 @@ export function boot(): void {
     ws.onclose = (ev: CloseEvent) => {
       if (socket === ws) socket = null;
       store.dispatch({ type: "close", code: ev.code });
-      // 口令错 / 被拒：重试一万次也还是错，别自动重连
-      if (ev.code === 4001 || ev.code === 4004) return;
+      // 口令错 / 被拒：重试一万次也还是错，别自动重连；清掉本地凭据回配对页
+      if (isAuthCloseCode(ev.code)) {
+        clearCredentials(localStorage);
+        return;
+      }
       const attempts = store.getSnapshot().link.attempts;
       const delay = RETRY_MS[Math.min(Math.max(attempts - 1, 0), RETRY_MS.length - 1)];
       retryTimer = window.setTimeout(connect, delay + Math.random() * 200);
