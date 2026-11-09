@@ -1,6 +1,6 @@
 /* 梵境 PWA 的最小 service worker：只缓存 /app/ 壳，连不上时也能打开页面。
    实时数据永远走 WebSocket；这里不碰 /ws，也不缓存任何审批/产出。 */
-const CACHE = "vance-shell-v1";
+const CACHE = "vance-shell-v2";
 
 self.addEventListener("install", (event) => {
   const scope = self.registration.scope;
@@ -14,6 +14,7 @@ self.addEventListener("install", (event) => {
           new URL("icons/icon-192.png", scope).href,
           new URL("icons/icon-512.png", scope).href,
           new URL("icons/icon-maskable-512.png", scope).href,
+          new URL("icons/favicon-32.png", scope).href,
         ]),
       )
       .then(() => self.skipWaiting())

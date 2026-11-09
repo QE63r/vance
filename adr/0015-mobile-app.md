@@ -16,7 +16,7 @@
 - `manifest.json`：名称「梵境 Vance」、短名「梵境」、`display: standalone`、
   `start_url`/`scope` 都在 `/app/`
 - service worker 只缓存 `/app/` 壳和带哈希的 assets；不缓存 WebSocket、审批、产出
-- 图标 192 / 512 / maskable；深色底 + 「梵」+ 蓝色短线
+- 图标 192 / 512 / maskable；沿用 `assets/vance-icon.ico` 的「碎环 + 星」Logo
 - 不做推送、后台常驻、生物识别、多用户、应用商店；APK 留到下一阶段
 
 ### 二、凭据只存浏览器本地

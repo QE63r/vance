@@ -1068,16 +1068,13 @@ button:disabled {
 .pair-mark {
   width: 62px;
   height: 62px;
+  padding: 0;
   border-radius: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
+  object-fit: cover;
   margin-bottom: 22px;
   border: 1px solid #223041;
   background: #0b0f14;
-  color: #e6edf3;
-  font-size: 30px;
-  font-weight: 700;
   box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.07);
 }
 

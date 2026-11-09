@@ -32,7 +32,11 @@ export function PairScreen({ error }: { error?: string }) {
 
   return (
     <div className="pair">
-      <div className="pair-mark">梵</div>
+      <img
+        className="pair-mark"
+        src={`${import.meta.env.BASE_URL}icons/icon-192.png`}
+        alt="梵境"
+      />
       <h1 className="pair-title">连接你的电脑</h1>
       <p className="pair-desc">
         在电脑的“梵境 Vance”窗口里按 <b>v</b>，会出现二维码和地址。
