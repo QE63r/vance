@@ -45,6 +45,7 @@ function lanUrl(tk) {
 
 const tk = token();
 const tun = tunnelUrl();
+console.log("  正在检查当前入口（最多 5 秒）…");
 const tunOk = tun ? await healthy(tun) : false;
 const target = tunOk ? tun : lanUrl(tk);
 

@@ -41,6 +41,8 @@ chcp 65001 >nul
 node tools\print-connect.mjs
 chcp 936 >nul
 echo.
+echo   当前地址（复制到手机浏览器）：
+type "%USERPROFILE%\.vance\tunnel-url.txt"
 echo.
 goto :eof
 
