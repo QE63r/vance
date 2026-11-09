@@ -319,8 +319,9 @@ if (USE_TUNNEL) {
       const publicUrl = `${m[0].replace(/\/$/, "")}/app/?token=${token}`;
       console.log("");
       console.log("  ── 公网地址（Tailscale Funnel，永久固定）──────");
-      qrcode.generate(publicUrl, { small: true });
       console.log(`  ${publicUrl}`);
+      console.log("");
+      qrcode.generate(publicUrl, { small: true });
       console.log("  ────────────────────────────────────────");
       try {
         writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
@@ -403,9 +404,9 @@ if (USE_TUNNEL) {
         if (warning) console.log(`  ${warning}`);
         console.log("  【公网】手机用流量 / 不在同一个 wifi 时，扫这个：");
         console.log("");
-        qrcode.generate(publicUrl, { small: true });
-        console.log("");
         console.log(`  ${publicUrl}`);
+        console.log("");
+        qrcode.generate(publicUrl, { small: true });
         console.log("");
         console.log("  ⚠ 这个地址是公开可访问的，只发给自己；每次重启都会变。");
         console.log("  ────────────────────────────────────────");

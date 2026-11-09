@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import qrcode from "qrcode-terminal";
+import QRCode from "qrcode";
 import { lanEntries } from "../packages/host/dist/index.js";
 
 const PORT = 8787;
@@ -56,10 +57,18 @@ if (tunOk) {
   else console.log("  【局域网】手机和电脑连同一个 wifi 时，扫这个：");
 }
 console.log("");
-qrcode.generate(target, { small: true });
-console.log("");
 console.log(`  ${target}`);
 console.log("");
+qrcode.generate(target, { small: true });
+console.log("");
+try {
+  await QRCode.toFile(join(homedir(), ".vance", "qr.png"), target, {
+    width: 720,
+    margin: 2,
+    color: { dark: "#11181f", light: "#ffffff" },
+  });
+} catch {}
+console.log("  扫不到就手动输入上面的地址。");
 if (!tunOk) console.log("  要公网：关掉 host 后重新按 v，等终端出现【公网】。");
 console.log("  ────────────────────────────────────────");
 console.log("");
