@@ -310,7 +310,7 @@ if (USE_TUNNEL) {
     "tailscale",
   ];
   const tsExe = TS_CANDIDATES.find((p) => p === "tailscale" || existsSync(p)) ?? "tailscale";
-  try {
+  if (process.env.VANCE_FUNNEL === "1") try {
     const out = execFileSync(tsExe, ["funnel", "status"], { encoding: "utf8", timeout: 5000 });
     // Tailscale 的主机名可能是 desktop-xxx.tailnet-id.ts.net（多段子域名）
     const m = out.match(/https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net\/?/i);
@@ -372,7 +372,7 @@ if (USE_TUNNEL) {
   } else {
 
   console.log("  正在建立公网隧道（cloudflared）…");
-  const cf = spawn(exe, ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate"], {
+  const cf = spawn(exe, ["tunnel", "--url", `http://127.0.0.1:${port}`, "--no-autoupdate", "--protocol", "http2"], {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
