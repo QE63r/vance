@@ -22,7 +22,7 @@ function kindOf(contentType: string): "image" | "pdf" | "html" | "text" | "other
   return "other";
 }
 
-export function ArtifactPreview({ path, onClose }: { path: string; onClose: () => void }) {
+export function ArtifactPreview({ path, sessionId, onClose }: { path: string; sessionId?: string; onClose: () => void }) {
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [text, setText] = useState("");
   const [error, setError] = useState("");
@@ -37,7 +37,7 @@ export function ArtifactPreview({ path, onClose }: { path: string; onClose: () =
         const res = await fetch("/artifacts/ticket", {
           method: "POST",
           headers: { "content-type": "application/json", "x-vance-token": getToken() },
-          body: JSON.stringify({ path }),
+          body: JSON.stringify({ path, ...(sessionId ? { session_id: sessionId } : {}) }),
         });
         const body = (await res.json()) as any;
         if (!alive) return;

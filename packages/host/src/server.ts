@@ -288,6 +288,9 @@ export class HostServer {
           const parsed = JSON.parse(line) as unknown;
           const entry = isHistoryEntry(parsed) ? parsed : { session_id: LEGACY_SESSION, msg: parsed };
           this.history.push(entry);
+          // 重启后“最近一次产出”还在，不然历史里的产出点开是 404
+          const msg = entry.msg as { type?: string; artifacts?: ArtifactsPayload };
+          if (msg?.type === "artifacts" && msg.artifacts) this.latestArtifacts.set(entry.session_id, msg.artifacts);
           this.touch(entry.session_id);
         } catch {}
       }

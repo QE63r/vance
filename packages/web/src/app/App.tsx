@@ -193,7 +193,9 @@ export function App() {
       {sheet === "profile" && (
         <ProfileSheet profile={s.profile} onPick={pickProfile} onClose={() => setSheet(null)} />
       )}
-      {artifactPath && <ArtifactPreview path={artifactPath} onClose={() => setArtifactPath(null)} />}
+      {artifactPath && (
+        <ArtifactPreview path={artifactPath} sessionId={s.sessionId} onClose={() => setArtifactPath(null)} />
+      )}
       {s.device.incoming.length > 0 && (
         <DeviceSheet
           request={s.device.incoming[0]}
