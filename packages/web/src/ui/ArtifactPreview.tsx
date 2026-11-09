@@ -14,9 +14,10 @@ function shortHash(hash: string): string {
   return hash ? `${hash.slice(0, 10)}…${hash.slice(-6)}` : "";
 }
 
-function kindOf(contentType: string): "image" | "pdf" | "text" | "other" {
+function kindOf(contentType: string): "image" | "pdf" | "html" | "text" | "other" {
   if (contentType.startsWith("image/")) return "image";
   if (contentType.startsWith("application/pdf")) return "pdf";
+  if (contentType.startsWith("text/html")) return "html";
   if (contentType.startsWith("text/")) return "text";
   return "other";
 }
@@ -108,6 +109,15 @@ export function ArtifactPreview({ path, onClose }: { path: string; onClose: () =
             <div className="preview-frame">
               {kind === "image" && <img src={`/artifacts/${ticket.ticket}`} alt="产出原件" />}
               {kind === "pdf" && <iframe title="产出原件" src={`/artifacts/${ticket.ticket}`} />}
+              {kind === "html" && (
+                <iframe
+                  className="preview-html"
+                  title="交付页面"
+                  sandbox="allow-scripts allow-forms allow-popups"
+                  allowFullScreen
+                  src={`/artifacts/${ticket.ticket}`}
+                />
+              )}
               {kind === "text" && <pre className="preview-text">{text}</pre>}
               {kind === "other" && (
                 <div className="preview-other">

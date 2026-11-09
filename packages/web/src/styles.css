@@ -1045,3 +1045,9 @@ button:disabled {
   gap: 12px;
 }
 .preview-error { color: #fca5a5; font-size: 12px; padding: 8px 0; }
+
+.preview-frame iframe.preview-html {
+  height: 64dvh;
+  border: 0;
+  background: #0b1015;
+}

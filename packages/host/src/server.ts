@@ -89,7 +89,7 @@ const ARTIFACT_MIME: Record<string, string> = {  ".png": "image/png",
   ".txt": "text/plain; charset=utf-8",
   ".md": "text/plain; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".html": "text/plain; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
