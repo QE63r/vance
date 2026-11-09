@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getToken } from "../net/ws";
 
 interface Ticket {
@@ -29,6 +29,7 @@ export function ArtifactPreview({ path, sessionId, onClose }: { path: string; se
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [done, setDone] = useState<"accept" | "reject" | null>(null);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -88,14 +89,33 @@ export function ArtifactPreview({ path, sessionId, onClose }: { path: string; se
 
   const kind = ticket ? kindOf(ticket.content_type) : "other";
 
+  const openFullscreen = async () => {
+    const el = frameRef.current;
+    if (!el) return;
+    try {
+      await el.requestFullscreen();
+    } catch {
+      setError("当前浏览器不支持全屏预览，请下载原件或在电脑上打开");
+    }
+  };
+
+  const canFullscreen = kind === "html" || kind === "pdf";
+
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet preview-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="sheet-head">
           <span>交付物</span>
-          <button className="icon-btn" type="button" onClick={onClose}>
-            ✕
-          </button>
+          <div className="preview-head-actions">
+            {ticket && !done && canFullscreen && (
+              <button className="preview-open" type="button" onClick={openFullscreen}>
+                全屏查看
+              </button>
+            )}
+            <button className="icon-btn" type="button" onClick={onClose}>
+              ✕
+            </button>
+          </div>
         </div>
         <div className="preview-path" title={path}>
           {path}
@@ -106,38 +126,50 @@ export function ArtifactPreview({ path, sessionId, onClose }: { path: string; se
 
         {ticket && !done && (
           <>
-            <div className="preview-frame">
-              {kind === "image" && <img src={`/artifacts/${ticket.ticket}`} alt="产出原件" />}
-              {kind === "pdf" && <iframe title="产出原件" src={`/artifacts/${ticket.ticket}`} />}
-              {kind === "html" && (
-                <iframe
-                  className="preview-html"
-                  title="交付页面"
-                  sandbox="allow-scripts allow-forms allow-popups"
-                  allowFullScreen
-                  src={`/artifacts/${ticket.ticket}`}
-                />
-              )}
-              {kind === "text" && <pre className="preview-text">{text}</pre>}
-              {kind === "other" && (
-                <div className="preview-other">
-                  手机上无法预览这类文件。请下载原件，或回电脑上打开。
-                  <a className="btn ghost" href={`/artifacts/${ticket.ticket}`} download>
-                    下载原件
-                  </a>
-                </div>
-              )}
+            <div className="preview-body">
+              <div className="preview-frame">
+                {kind === "image" && <img src={`/artifacts/${ticket.ticket}`} alt="产出原件" />}
+                {kind === "pdf" && (
+                  <iframe
+                    ref={frameRef}
+                    title="产出原件"
+                    src={`/artifacts/${ticket.ticket}`}
+                    allow="fullscreen"
+                    allowFullScreen
+                  />
+                )}
+                {kind === "html" && (
+                  <iframe
+                    ref={frameRef}
+                    className="preview-html"
+                    title="交付页面"
+                    sandbox="allow-scripts allow-forms allow-popups"
+                    allow="fullscreen"
+                    allowFullScreen
+                    src={`/artifacts/${ticket.ticket}`}
+                  />
+                )}
+                {kind === "text" && <pre className="preview-text">{text}</pre>}
+                {kind === "other" && (
+                  <div className="preview-other">
+                    手机上无法预览这类文件。请下载原件，或回电脑上打开。
+                    <a className="btn ghost" href={`/artifacts/${ticket.ticket}`} download>
+                      下载原件
+                    </a>
+                  </div>
+                )}
+              </div>
+              <div className="preview-meta">
+                {Math.max(1, Math.round(ticket.size / 1024))} KB · sha256 {shortHash(ticket.sha256)}
+              </div>
+              <textarea
+                className="preview-note"
+                rows={2}
+                placeholder="打回时写一句意见（可不填）"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+              />
             </div>
-            <div className="preview-meta">
-              {Math.max(1, Math.round(ticket.size / 1024))} KB · sha256 {shortHash(ticket.sha256)}
-            </div>
-            <textarea
-              className="preview-note"
-              rows={2}
-              placeholder="打回时写一句意见（可不填）"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
             <div className="preview-actions">
               <button className="btn deny" type="button" disabled={busy} onClick={() => decide("reject")}>
                 打回重做

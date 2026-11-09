@@ -985,7 +985,31 @@ button:disabled {
   font-size: 12.5px;
   cursor: pointer;
 }
-.preview-sheet { max-height: 90dvh; overflow-y: auto; }
+.preview-sheet {
+  height: 96dvh;
+  max-height: 96dvh;
+  overflow: hidden;
+}
+.preview-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.preview-open {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid #223041;
+  background: #0f1722;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+.preview-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 6px;
+}
 .preview-path {
   font-size: 10.5px;
   color: #64748b;
@@ -1035,7 +1059,13 @@ button:disabled {
   font-size: 12px;
   resize: vertical;
 }
-.preview-actions { display: flex; gap: 8px; }
+.preview-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
 .preview-actions .btn { flex: 1; }
 .preview-done {
   padding: 16px 4px;
@@ -1047,7 +1077,7 @@ button:disabled {
 .preview-error { color: #fca5a5; font-size: 12px; padding: 8px 0; }
 
 .preview-frame iframe.preview-html {
-  height: 64dvh;
+  height: 52dvh;
   border: 0;
   background: #0b1015;
 }
