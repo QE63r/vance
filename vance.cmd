@@ -23,6 +23,9 @@ chcp 65001 >nul
 set "PYTHONUTF8=1"
 set "PYTHONIOENCODING=utf-8"
 set "LANG=zh_CN.UTF-8"
+rem [学习注] 优先固定入口：Funnel 开着且指向 8787 就用 .ts.net；
+rem 没配 Funnel 时 host-demo 会自动回退 quick tunnel，不会连不上。
+set "VANCE_FUNNEL=1"
 
 node tools\host-demo.mjs "%~dp0..\sandbox" %*
 goto :eof
@@ -34,23 +37,15 @@ echo   梵境已经在跑了（端口 8787 被占用），不再重复启动。
 if /i "%~1"=="--tunnel" (
   echo.
   echo   注意：已有 host 在跑，本次没有开新隧道。
-  echo   要开公网：先关掉正在跑的 host，再按 v。
+  echo   下面直接显示当前可用的二维码/地址；要换隧道再重启 host。
 )
 echo.
 chcp 65001 >nul
 node tools\print-connect.mjs
 chcp 936 >nul
 echo.
-echo   当前地址（复制到手机浏览器）：
-type "%USERPROFILE%\.vance\tunnel-url.txt"
-echo.
-set "OPEN_URL="
-if exist "%USERPROFILE%\.vance\tunnel-url.txt" set /p OPEN_URL=<"%USERPROFILE%\.vance\tunnel-url.txt"
-if defined OPEN_URL (
-  echo   正在用浏览器打开控制界面…
-  start "" "%OPEN_URL%"
-)
-echo.
+rem [学习注] 这里只出二维码/地址，不在电脑上打开控制界面：
+rem 手机才是控制端；电脑浏览器一开就会抢第一台设备，手机反而要审批。
 goto :eof
 
 :fail
