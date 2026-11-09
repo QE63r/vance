@@ -373,43 +373,45 @@ if (USE_TUNNEL) {
       const baseUrl = m[0];
       const publicUrl = `${baseUrl}/app/?token=${token}`;
 
-      // 分配了域名 ≠ 隧道已连通。先轮询 /health，真通了再写文件、出二维码；
-      // 否则手机扫到的是一个 530/404。
+      // 分配了域名 ≠ 隧道已连通。先轮询 /health，真通了再出码；
+      // 但最多等 120 秒，仍不通也把地址给出来（否则用户没有公网入口）。
+      const publish = (warning = "") => {
+        try {
+          writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
+          void QRCode.toFile(join(homedir(), ".vance", "qr.png"), publicUrl, {
+            width: 720,
+            margin: 2,
+            color: { dark: "#11181f", light: "#ffffff" },
+          });
+        } catch {}
+        console.log("");
+        console.log("  ────────────────────────────────────────");
+        if (warning) console.log(`  ${warning}`);
+        console.log("  【公网】手机用流量 / 不在同一个 wifi 时，扫这个：");
+        console.log("");
+        qrcode.generate(publicUrl, { small: true });
+        console.log("");
+        console.log(`  ${publicUrl}`);
+        console.log("");
+        console.log("  ⚠ 这个地址是公开可访问的，只发给自己；每次重启都会变。");
+        console.log("  ────────────────────────────────────────");
+        console.log("");
+      };
+
       const waitReady = async () => {
-        for (let i = 0; i < 30; i++) {
+        for (let i = 0; i < 60; i++) {
           await new Promise((r) => setTimeout(r, 2000));
           try {
-            const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(3000) });
+            const res = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(4000) });
             if (res.ok) {
-              try {
-                writeFileSync(join(homedir(), ".vance", "tunnel-url.txt"), publicUrl);
-                void QRCode.toFile(join(homedir(), ".vance", "qr.png"), publicUrl, {
-                  width: 720,
-                  margin: 2,
-                  color: { dark: "#11181f", light: "#ffffff" },
-                });
-              } catch {}
-              console.log("");
-              console.log("  ────────────────────────────────────────");
-              console.log("  【公网】手机用流量 / 不在同一个 wifi 时，扫这个：");
-              console.log("");
-              qrcode.generate(publicUrl, { small: true });
-              console.log("");
-              console.log(`  ${publicUrl}`);
-              console.log("");
-              console.log("  ⚠ 这个地址是公开可访问的，只发给自己；每次重启都会变。");
-              console.log("  ────────────────────────────────────────");
-              console.log("");
+              publish();
               return;
             }
           } catch {
             /* 还没通，继续等 */
           }
         }
-        console.log("");
-        console.log("  ⚠ 隧道域名已分配，但 60 秒内没连通；先不用公网，局域网仍可用。");
-        console.log("     要公网就重启一次（v），或检查 cloudflared 的网络。");
-        console.log("");
+        publish("⚠ 隧道域名已分配，但 2 分钟内没确认连通；扫了打不开就重启 v。");
       };
       void waitReady();
     }
