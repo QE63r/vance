@@ -44,6 +44,13 @@ echo.
 echo   当前地址（复制到手机浏览器）：
 type "%USERPROFILE%\.vance\tunnel-url.txt"
 echo.
+set "OPEN_URL="
+if exist "%USERPROFILE%\.vance\tunnel-url.txt" set /p OPEN_URL=<"%USERPROFILE%\.vance\tunnel-url.txt"
+if defined OPEN_URL (
+  echo   正在用浏览器打开控制界面…
+  start "" "%OPEN_URL%"
+)
+echo.
 goto :eof
 
 :fail
