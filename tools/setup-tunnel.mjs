@@ -63,7 +63,7 @@ writeFileSync(cfgFile, JSON.stringify({ name: NAME, host }, null, 2));
 console.log(`
 完成。
 
-  固定地址： https://${host}/?token=<你的口令>
+  固定地址： https://${host}/#token=<你的口令>
   配置写入： ${cfgFile}
 
 下一步：

@@ -9,7 +9,7 @@ const html = readFileSync(
 
 const dom = new JSDOM(html, {
   runScripts: "dangerously",
-  url: "http://127.0.0.1:8787/?token=test",
+  url: "http://127.0.0.1:8787/#token=test",
   beforeParse(win) {
     class FakeWS {
       constructor() {

@@ -178,6 +178,7 @@ const host = new HostServer({
   webDir: WEB_DIR,
   projectName: "sandbox",
   deviceStorePath: join(homedir(), ".vance", "devices.json"),
+  artifactStoreFile: join(homedir(), ".vance", "artifacts.json"),
   // 不启用 approveAllDevices：配对只走“首台自动信任 / 已记录设备”。
   // 临时免审批只留给单测，不在启动器里开。
 });
@@ -278,7 +279,7 @@ const real =
   entries.find((e) => /Wi-?Fi|WLAN|以太网|Ethernet/i.test(e.iface) && !/vEthernet|Loopback/i.test(e.iface)) ??
   entries[0];
 
-const url = `${real ? real.url : `http://127.0.0.1:${port}`}/app/?token=${token}`;
+const url = `${real ? real.url : `http://127.0.0.1:${port}`}/app/#token=${token}`;
 
 console.log("");
 console.log("  梵境 · 等待手机连接");
@@ -319,7 +320,7 @@ if (USE_TUNNEL) {
     const m = out.match(/https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net\/?/i);
     const proxiesThisPort = new RegExp(`proxy\\s+http://127\\.0\\.0\\.1:${port}\\b`).test(out);
     if (m && proxiesThisPort) {
-      const publicUrl = `${m[0].replace(/\/$/, "")}/app/?token=${token}`;
+      const publicUrl = `${m[0].replace(/\/$/, "")}/app/#token=${token}`;
       console.log("");
       console.log("  ── 公网地址（Tailscale Funnel，永久固定）──────");
       console.log(`  ${publicUrl}`);
@@ -355,7 +356,7 @@ if (USE_TUNNEL) {
     const cf = spawn(exe, ["tunnel", "run", "--url", `http://127.0.0.1:${port}`, named.name], {
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const publicUrl = `https://${named.host}/app/?token=${token}`;
+    const publicUrl = `https://${named.host}/app/#token=${token}`;
     console.log("");
     console.log("  ── 公网地址（固定，重启也不变）────────────");
     qrcode.generate(publicUrl, { small: true });
@@ -389,7 +390,7 @@ if (USE_TUNNEL) {
     if (m && !printed) {
       printed = true;
       const baseUrl = m[0];
-      const publicUrl = `${baseUrl}/app/?token=${token}`;
+      const publicUrl = `${baseUrl}/app/#token=${token}`;
 
       // 分配了域名 ≠ 隧道已连通。先轮询 /health，真通了再出码；
       // 但最多等 120 秒，仍不通也把地址给出来（否则用户没有公网入口）。

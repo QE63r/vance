@@ -1,4 +1,6 @@
+import { useEffect, useState } from "react";
 import type { ArtifactsPayload, DeviceRequest, Profile } from "../model/types";
+import { getToken } from "../net/ws";
 
 function Sheet({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
   return (
@@ -65,6 +67,129 @@ export function ArtifactsSheet({
   );
 }
 
+interface RepoArtifact {
+  id: string;
+  path: string;
+  session_id: string;
+  turn_id: string;
+  sha256: string;
+  size: number;
+  content_type: string;
+  at: number;
+  status: "pending" | "accepted" | "rejected";
+  note?: string;
+  exists: boolean;
+  changed: boolean;
+}
+
+const REPO_FILTERS: Array<["all" | "pending" | "accepted" | "rejected", string]> = [
+  ["all", "全部"],
+  ["pending", "待验收"],
+  ["accepted", "已收"],
+  ["rejected", "已打回"],
+];
+
+const REPO_STATUS: Record<RepoArtifact["status"], string> = {
+  pending: "待验收",
+  accepted: "已收",
+  rejected: "已打回",
+};
+
+function repoTime(at: number): string {
+  try {
+    return new Date(at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+export function ArtifactRepoSheet({
+  onOpen,
+  onClose,
+}: {
+  onOpen: (path: string, sessionId: string) => void;
+  onClose: () => void;
+}) {
+  const [filter, setFilter] = useState<"all" | "pending" | "accepted" | "rejected">("all");
+  const [items, setItems] = useState<RepoArtifact[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    setError("");
+    fetch(`/artifacts?status=${filter}&limit=100`, {
+      headers: { "x-vance-token": getToken() },
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return (await res.json()) as { artifacts?: RepoArtifact[] };
+      })
+      .then((data) => {
+        if (alive) setItems(data.artifacts ?? []);
+      })
+      .catch(() => {
+        if (alive) {
+          setItems([]);
+          setError("取不到交付物仓库，请重试");
+        }
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [filter]);
+
+  return (
+    <Sheet title="交付物仓库" onClose={onClose}>
+      <div className="repo-filters">
+        {REPO_FILTERS.map(([value, label]) => (
+          <button
+            key={value}
+            className={`repo-filter${filter === value ? " on" : ""}`}
+            type="button"
+            onClick={() => setFilter(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      {error && <div className="preview-error">{error}</div>}
+      {loading && <div className="sheet-empty">取仓库中…</div>}
+      {!loading && !error && items.length === 0 && (
+        <div className="sheet-empty">还没有交付物。等 Agent 产出后，这里会留下记录。</div>
+      )}
+      {!loading &&
+        items.map((a) => (
+          <button
+            key={a.id}
+            className="repo-row"
+            type="button"
+            disabled={!a.exists}
+            title={a.path}
+            onClick={() => a.exists && onOpen(a.path, a.session_id)}
+          >
+            <span className="repo-main">
+              <span className="repo-name">{shortPath(a.path)}</span>
+              <span className="repo-meta">
+                {a.session_id} · {repoTime(a.at)} · {Math.max(1, Math.round(a.size / 1024))} KB
+                {!a.exists && " · 文件已不在"}
+                {a.exists && a.changed && " · 文件已变化"}
+              </span>
+            </span>
+            <span className={`repo-status ${a.status}`}>{REPO_STATUS[a.status]}</span>
+          </button>
+        ))}
+      <div className="sheet-note">
+        验收状态跟原件的 sha256 绑定；文件被删/改会标出来。点一条看原件，确认或打回。
+      </div>
+    </Sheet>
+  );
+}
+
 export function DeviceSheet({ request, onDecide }: { request: DeviceRequest; onDecide: (allow: boolean) => void }) {
   return (
     <Sheet title="有新设备请求接入" onClose={() => onDecide(false)}>
@@ -89,12 +214,14 @@ export interface SessionRow {
 }
 
 export function MenuSheet({
+  onRepo,
   onSessions,
   onRules,
   onProfile,
   onForget,
   onClose,
 }: {
+  onRepo: () => void;
   onSessions: () => void;
   onRules: () => void;
   onProfile: () => void;
@@ -103,6 +230,10 @@ export function MenuSheet({
 }) {
   return (
     <Sheet title="更多" onClose={onClose}>
+      <button className="menu-row" type="button" onClick={onRepo}>
+        <span>交付物仓库</span>
+        <span className="menu-arrow">›</span>
+      </button>
       <button className="menu-row" type="button" onClick={onSessions}>
         <span>任务列表</span>
         <span className="menu-arrow">›</span>

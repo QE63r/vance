@@ -66,7 +66,7 @@ host 仍是**单执行**，`useSession` 只切「当前是谁」，不 create / 
 
 ## 后果
 
-- 手机可以用 `…/app/?token=…&session=legacy` 直接看某条会话；列表/切换 UI 仍未做（卡 3）。
+- 手机可以用 `…/app/#token=…&session=legacy` 直接看某条会话；列表/切换 UI 仍未做（卡 3）。
 - 旧流水只能整体归 `legacy`，无法拆回具体会话。
 - 测试基线 106 → 112；host 用例改用临时 `historyFile`，不再读写用户真实的 `~/.vance/history.jsonl`。
 - 已验证：真 host 上 `/sessions` 返回 `ses_...`(active) + `legacy`；

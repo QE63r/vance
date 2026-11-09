@@ -688,6 +688,99 @@ describe("权限档位（host）", () => {
   });
 });
 
+describe("交付物仓库（索引 / 状态 / 历史取件）", () => {
+  const setup = async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vance-repo-"));
+    tempDirs.push(dir);
+    const file = join(dir, "方案.docx");
+    writeFileSync(file, "repo artifact");
+    const store = join(dir, "artifacts.json");
+    const hist = historyFile();
+    const s = makeServer({
+      port: 0,
+      token: "repo1",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      historyFile: hist,
+      artifactStoreFile: store,
+    });
+    server = s;
+    s.useSession("ses_repo", "仓库");
+    const { port } = await s.start();
+    s.broadcastArtifacts({ turnId: "t1", added: [file], changed: [], removed: [], warnings: [] });
+    return { s, port, file, store, hist };
+  };
+
+  it("GET /artifacts 列出待验收记录和 sha256", async () => {
+    const { port, file } = await setup();
+    const res = await fetch(`http://127.0.0.1:${port}/artifacts?session_id=ses_repo`, {
+      headers: { "x-vance-token": "repo1" },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body.artifacts).toHaveLength(1);
+    expect(body.artifacts[0]).toMatchObject({
+      path: file,
+      session_id: "ses_repo",
+      status: "pending",
+      exists: true,
+      changed: false,
+    });
+    expect(body.artifacts[0].sha256).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("验收后状态变成 accepted，并落盘到重启后", async () => {
+    const { s, port, file, store } = await setup();
+    const ticket = (await (
+      await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-vance-token": "repo1" },
+        body: JSON.stringify({ path: file, session_id: "ses_repo" }),
+      })
+    ).json()) as any;
+    const accepted = await fetch(`http://127.0.0.1:${port}/artifacts/accept`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "repo1" },
+      body: JSON.stringify({ ticket: ticket.ticket, decision: "accept" }),
+    });
+    expect(accepted.status).toBe(200);
+
+    await s.close();
+    server = null;
+    const s2 = makeServer({
+      port: 0,
+      token: "repo1",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      artifactStoreFile: store,
+    });
+    server = s2;
+    const { port: port2 } = await s2.start();
+    const res = await fetch(`http://127.0.0.1:${port2}/artifacts?session_id=ses_repo`, {
+      headers: { "x-vance-token": "repo1" },
+    });
+    const body = (await res.json()) as any;
+    expect(body.artifacts[0].status).toBe("accepted");
+    expect(body.artifacts[0].decided_at).toBeTypeOf("number");
+  });
+
+  it("最新一轮换了文件，旧文件仍能凭历史记录取件", async () => {
+    const { s, port, file } = await setup();
+    const other = join(dirname(file), "b.txt");
+    writeFileSync(other, "second turn");
+    s.broadcastArtifacts({ turnId: "t2", added: [other], changed: [], removed: [], warnings: [] });
+
+    const ticket = await fetch(`http://127.0.0.1:${port}/artifacts/ticket`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "repo1" },
+      body: JSON.stringify({ path: file, session_id: "ses_repo" }),
+    });
+    expect(ticket.status).toBe(200);
+    const body = (await ticket.json()) as any;
+    expect(body.path).toBe(file);
+  });
+});
+
 describe("交付物检阅（ticket / accept）", () => {
   const setup = async (ttl = 60_000) => {
     const dir = mkdtempSync(join(tmpdir(), "vance-art-"));

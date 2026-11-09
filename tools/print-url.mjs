@@ -17,9 +17,9 @@ const real =
   entries[0];
 
 if (real) {
-  console.log(`  局域网：${real.url}/app/?token=${token}`);
+  console.log(`  局域网：${real.url}/app/#token=${token}`);
   console.log(`  网卡：${real.iface}  地址：${real.address}`);
 } else {
-  console.log(`  本机：http://127.0.0.1:${PORT}/app/?token=${token}`);
+  console.log(`  本机：http://127.0.0.1:${PORT}/app/#token=${token}`);
   console.log("  没找到局域网 IPv4，手机可能连不上；检查 wifi 或用手机热点。");
 }

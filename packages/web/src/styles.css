@@ -977,6 +977,85 @@ button:disabled {
 .chip.prof-workspace { color: #93c5fd; border-color: #1e3a8a; }
 .chip.prof-full { color: #fca5a5; border-color: #7f1d1d; }
 
+/* 交付物仓库 */
+.repo-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 2px 0 8px;
+}
+.repo-filter {
+  border: 1px solid #223041;
+  background: #0b121a;
+  color: #94a3b8;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 11px;
+}
+.repo-filter.on {
+  background: #172033;
+  border-color: #1d4ed8;
+  color: #bfdbfe;
+}
+.repo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 2px;
+  border: 0;
+  border-bottom: 1px solid #16202e;
+  background: none;
+  color: #cbd5e1;
+  text-align: left;
+}
+.repo-row:disabled {
+  opacity: 0.55;
+}
+.repo-main {
+  flex: 1;
+  min-width: 0;
+}
+.repo-name {
+  display: block;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repo-meta {
+  display: block;
+  color: #64748b;
+  font-size: 10px;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.repo-status {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  border-radius: 999px;
+  padding: 2px 6px;
+  border: 1px solid;
+}
+.repo-status.pending {
+  color: #fcd34d;
+  border-color: #92400e;
+  background: #1a1408;
+}
+.repo-status.accepted {
+  color: #86efac;
+  border-color: #166534;
+  background: #0b1a12;
+}
+.repo-status.rejected {
+  color: #fca5a5;
+  border-color: #7f1d1d;
+  background: #1a0f12;
+}
+
 /* 交付物预览 */
 .file {
   width: 100%;

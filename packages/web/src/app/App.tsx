@@ -7,16 +7,17 @@ import type { Profile } from "../model/types";
 import { Timeline } from "../ui/Timeline";
 import { Composer } from "../ui/Composer";
 import { ScreenMini } from "../ui/ScreenMini";
-import { ArtifactsSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
+import { ArtifactsSheet, ArtifactRepoSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
 import { ArtifactPreview } from "../ui/ArtifactPreview";
 import { PairScreen } from "./PairScreen";
 
 export function App() {
   const s = useVance();
   const [now, setNow] = useState(() => Date.now());
-  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules" | "profile">(null);
+  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules" | "profile" | "repo">(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [artifactPath, setArtifactPath] = useState<string | null>(null);
+  const [artifactSession, setArtifactSession] = useState<string | undefined>(undefined);
   const [rules, setRules] = useState<string[]>([]);
   const feedRef = useRef<HTMLDivElement | null>(null);
   const stick = useRef(true);
@@ -197,10 +198,21 @@ export function App() {
       )}
       {sheet === "menu" && (
         <MenuSheet
+          onRepo={() => setSheet("repo")}
           onSessions={openSessions}
           onRules={openRules}
           onProfile={() => setSheet("profile")}
           onForget={forget}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet === "repo" && (
+        <ArtifactRepoSheet
+          onOpen={(path, sessionId) => {
+            setSheet(null);
+            setArtifactSession(sessionId);
+            setArtifactPath(path);
+          }}
           onClose={() => setSheet(null)}
         />
       )}
@@ -212,7 +224,14 @@ export function App() {
         <ProfileSheet profile={s.profile} onPick={pickProfile} onClose={() => setSheet(null)} />
       )}
       {artifactPath && (
-        <ArtifactPreview path={artifactPath} sessionId={s.sessionId} onClose={() => setArtifactPath(null)} />
+        <ArtifactPreview
+          path={artifactPath}
+          sessionId={artifactSession ?? s.sessionId}
+          onClose={() => {
+            setArtifactPath(null);
+            setArtifactSession(undefined);
+          }}
+        />
       )}
       {s.device.incoming.length > 0 && (
         <DeviceSheet

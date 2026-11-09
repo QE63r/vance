@@ -80,6 +80,23 @@ interface ArtifactTicket {
   sessionId: string;
 }
 
+/** 交付物仓库的一条记录：一次产出/一次改动；验收状态跟着它走 */
+export type ArtifactStatus = "pending" | "accepted" | "rejected";
+
+export interface ArtifactRecord {
+  id: string;
+  path: string;
+  session_id: string;
+  turn_id: string;
+  sha256: string;
+  size: number;
+  content_type: string;
+  at: number;
+  status: ArtifactStatus;
+  note?: string;
+  decided_at?: number;
+}
+
 const ARTIFACT_MIME: Record<string, string> = {  ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -153,6 +170,11 @@ export interface HostOptions {
   defaultProfile?: Profile;
   /** 取件单有效期（毫秒），默认 60 秒；测试可以调小 */
   artifactTicketTtlMs?: number;
+  /**
+   * 交付物仓库索引文件，默认不持久化。
+   * host-demo 传 `~/.vance/artifacts.json`；测试传临时目录。
+   */
+  artifactStoreFile?: string;
   /** 监听地址，默认 0.0.0.0（局域网可访问） */
   hostname?: string;
   /** 项目名，展示用 */
@@ -242,6 +264,10 @@ export class HostServer {
   private readonly artifactTickets = new Map<string, ArtifactTicket>();
   private readonly ticketTtlMs: number;
 
+  /** 交付物仓库的索引；没配路径就只在内存里 */
+  private readonly artifactRecords: ArtifactRecord[] = [];
+  private readonly artifactStoreFile: string | null;
+
   /** 构建产物目录的绝对路径；没配就是 null（只有测试台，没有真前端） */
   private readonly webDir: string | null;
 
@@ -252,11 +278,13 @@ export class HostServer {
     this.profileFile = options.profileFile ?? join(homedir(), ".vance", "profile.json");
     this.deviceStorePath = options.deviceStorePath ? resolve(options.deviceStorePath) : null;
     this.ticketTtlMs = options.artifactTicketTtlMs ?? 60_000;
+    this.artifactStoreFile = options.artifactStoreFile ? resolve(options.artifactStoreFile) : null;
     const saved = this.loadProfile();
     // 完全权限是任务级的：重启不应该恢复成 full
     this.profile = saved && saved !== "full" ? saved : options.defaultProfile ?? "workspace";
     this.loadHistory();
     this.loadDevices();
+    this.loadArtifactRecords();
   }
 
   private loadProfile(): Profile | null {
@@ -445,7 +473,87 @@ export class HostServer {
   broadcastArtifacts(payload: ArtifactsPayload): void {
     const sid = this.activeSessionId ?? "unassigned";
     this.latestArtifacts.set(sid, payload);
+    this.recordArtifacts(payload, sid);
     this.emit({ type: "artifacts", artifacts: payload });
+  }
+
+  /**
+   * 把本轮新增/改动的文件记进仓库索引。
+   *
+   * 为什么在 broadcast 时记：历史里只有路径，事后算 sha 可能文件已经变了；
+   * 验收必须绑定“当时看到的字节”，所以记录时的 sha256 才是事实。
+   */
+  private recordArtifacts(payload: ArtifactsPayload, sid: string): void {
+    let changed = false;
+    for (const path of [...new Set([...payload.added, ...payload.changed])]) {
+      try {
+        if (!statSync(path).isFile()) continue;
+        const bytes = readFileSync(path);
+        const sha256 = createHash("sha256").update(bytes).digest("hex");
+        const same = this.artifactRecords.some(
+          (r) => r.session_id === sid && normalizePath(r.path) === normalizePath(path) && r.sha256 === sha256,
+        );
+        if (same) continue;
+        this.artifactRecords.push({
+          id: randomBytes(8).toString("hex"),
+          path,
+          session_id: sid,
+          turn_id: payload.turnId,
+          sha256,
+          size: bytes.length,
+          content_type: ARTIFACT_MIME[extname(path).toLowerCase()] ?? "application/octet-stream",
+          at: Date.now(),
+          status: "pending",
+        });
+        changed = true;
+      } catch {
+        // 文件在广播和索引之间被删了：不记一条永远取不到的原件
+      }
+    }
+    if (changed) {
+      if (this.artifactRecords.length > 5000) this.artifactRecords.splice(0, this.artifactRecords.length - 5000);
+      this.saveArtifactRecords();
+    }
+  }
+
+  private loadArtifactRecords(): void {
+    if (!this.artifactStoreFile) return;
+    try {
+      if (!existsSync(this.artifactStoreFile)) return;
+      const raw = JSON.parse(readFileSync(this.artifactStoreFile, "utf8")) as unknown;
+      if (!Array.isArray(raw)) return;
+      for (const item of raw) {
+        if (!item || typeof item !== "object") continue;
+        const r = item as Partial<ArtifactRecord>;
+        if (
+          typeof r.id !== "string" ||
+          typeof r.path !== "string" ||
+          typeof r.session_id !== "string" ||
+          typeof r.turn_id !== "string" ||
+          typeof r.sha256 !== "string" ||
+          typeof r.size !== "number" ||
+          typeof r.content_type !== "string" ||
+          typeof r.at !== "number" ||
+          (r.status !== "pending" && r.status !== "accepted" && r.status !== "rejected")
+        ) {
+          continue;
+        }
+        this.artifactRecords.push(r as ArtifactRecord);
+      }
+      if (this.artifactRecords.length > 5000) this.artifactRecords.splice(0, this.artifactRecords.length - 5000);
+    } catch {
+      // 索引坏了不该阻止 host 起来；仓库退化成空，原件仍可通过本轮产出取
+    }
+  }
+
+  private saveArtifactRecords(): void {
+    if (!this.artifactStoreFile) return;
+    try {
+      mkdirSync(dirname(this.artifactStoreFile), { recursive: true });
+      writeFileSync(this.artifactStoreFile, JSON.stringify(this.artifactRecords), "utf8");
+    } catch {
+      // 落盘失败只影响下次启动，当前内存索引仍然可用
+    }
   }
 
   /** 告诉所有设备：这一轮跑完了 / 又开始跑了 */
@@ -673,6 +781,44 @@ export class HostServer {
         return;
       }
 
+      // 交付物仓库：按会话/状态列历史记录；文件可能被删/改，读的时候标出来
+      if (url.pathname === "/artifacts") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { allow: "GET, HEAD" });
+          res.end("method not allowed");
+          return;
+        }
+        const sid = url.searchParams.get("session_id") ?? "";
+        const rawStatus = url.searchParams.get("status") ?? "all";
+        const status = rawStatus === "pending" || rawStatus === "accepted" || rawStatus === "rejected" ? rawStatus : "all";
+        const rawLimit = Number(url.searchParams.get("limit") ?? "50");
+        const limit = Number.isFinite(rawLimit) ? Math.min(200, Math.max(1, Math.floor(rawLimit))) : 50;
+        const artifacts = this.artifactRecords
+          .filter((r) => (!sid || r.session_id === sid) && (status === "all" || r.status === status))
+          .sort((a, b) => b.at - a.at)
+          .slice(0, limit)
+          .map((r) => {
+            let exists = false;
+            let changed = false;
+            try {
+              const st = statSync(r.path);
+              exists = st.isFile();
+              if (exists && st.size !== r.size) changed = true;
+            } catch {
+              exists = false;
+            }
+            return { ...r, exists, changed };
+          });
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(req.method === "HEAD" ? undefined : JSON.stringify({ artifacts }));
+        return;
+      }
+
       // 取件单：只允许「当前会话最近一次产出」里的文件，60 秒、单文件
       if (url.pathname === "/artifacts/ticket") {
         if (!this.authorized(req)) {
@@ -710,12 +856,11 @@ export class HostServer {
           }
           const sid = typeof body.session_id === "string" ? body.session_id : this.activeSessionId ?? "unassigned";
           const latest = this.latestArtifacts.get(sid);
-          if (!latest) {
-            send(404, { ok: false, error: "no-artifacts" });
-            return;
-          }
-          const allowed = [...latest.added, ...latest.changed].map((p) => normalizePath(p));
-          if (!allowed.includes(normalizePath(requested))) {
+          const allowed = latest ? [...latest.added, ...latest.changed].map((p) => normalizePath(p)) : [];
+          const known = this.artifactRecords.some(
+            (r) => r.session_id === sid && normalizePath(r.path) === normalizePath(requested),
+          );
+          if (!allowed.includes(normalizePath(requested)) && !known) {
             send(404, { ok: false, error: "not-an-artifact" });
             return;
           }
@@ -847,15 +992,32 @@ export class HostServer {
             return;
           }
           const note = typeof body.note === "string" ? body.note.trim() : "";
+          const decidedAt = Date.now();
           this.emit({
             type: "artifact_decision",
             path: entry.path,
             sha256,
             decision,
             by: "phone",
-            at: Date.now(),
+            at: decidedAt,
             note: note || undefined,
           });
+          // 仓库记录跟着验收走；状态落盘，重启后还在
+          let indexChanged = false;
+          for (const record of this.artifactRecords) {
+            if (
+              record.session_id === entry.sessionId &&
+              normalizePath(record.path) === normalizePath(entry.path) &&
+              record.sha256 === sha256
+            ) {
+              record.status = decision === "accept" ? "accepted" : "rejected";
+              if (note) record.note = note;
+              else delete record.note;
+              record.decided_at = decidedAt;
+              indexChanged = true;
+            }
+          }
+          if (indexChanged) this.saveArtifactRecords();
           this.artifactTickets.delete(ticket);
           if (decision === "reject" && note) {
             this.promptHandler?.(`交付物未通过：${note}`);

@@ -41,7 +41,7 @@ function funnelUrl(tk) {
     const m = out.match(/https:\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)*\.ts\.net\/?/i);
     const proxiesThisPort = new RegExp(`proxy\\s+http://127\\.0\\.0\\.1:${PORT}\\b`).test(out);
     if (!m || !proxiesThisPort) return "";
-    return `${m[0].replace(/\/$/, "")}/app/?token=${tk}`;
+    return `${m[0].replace(/\/$/, "")}/app/#token=${tk}`;
   } catch {
     return "";
   }
@@ -62,12 +62,12 @@ function lanUrl(tk) {
   const real =
     entries.find((e) => /Wi-?Fi|WLAN|以太网|Ethernet/i.test(e.iface) && !/vEthernet|Loopback/i.test(e.iface)) ??
     entries[0];
-  return `${real?.url ?? `http://127.0.0.1:${PORT}`}/app/?token=${tk}`;
+  return `${real?.url ?? `http://127.0.0.1:${PORT}`}/app/#token=${tk}`;
 }
 
 const tk = token();
 const fixed = funnelUrl(tk);
-const tun = tunnelUrl();
+const tun = tunnelUrl().replace("/app/?token=", "/app/#token=");
 console.log("  正在检查当前入口（最多 5 秒）…");
 const fixedOk = fixed ? await healthy(fixed) : false;
 const tunOk = !fixedOk && tun ? await healthy(tun) : false;
