@@ -41,7 +41,7 @@ doskey s=git status $*
 doskey l=git log --oneline -10 $*
 doskey c=code . $*
 doskey ..=cd ..
-doskey u=node tools\print-url.mjs
+doskey u=node tools\print-connect.mjs
 
 echo   快捷命令（仅本窗口有效）:
 echo     v  启动梵境（公网+二维码）    vl 启动（只局域网）

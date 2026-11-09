@@ -38,19 +38,9 @@ if /i "%~1"=="--tunnel" (
 )
 echo.
 chcp 65001 >nul
-node tools\print-url.mjs
+node tools\print-connect.mjs
 chcp 936 >nul
 echo.
-if exist "%USERPROFILE%\.vance\tunnel-url.txt" (
-  findstr /v /c:"api.trycloudflare.com" "%USERPROFILE%\.vance\tunnel-url.txt" >nul && (
-    echo   ¹«ÍøµØÖ·£º
-    type "%USERPROFILE%\.vance\tunnel-url.txt"
-    echo.
-  )
-)
-if exist "%USERPROFILE%\.vance\qr.png" (
-  echo   ¶þÎ¬ÂëÍ¼Æ¬£º%USERPROFILE%\.vance\qr.png
-)
 echo.
 goto :eof
 
