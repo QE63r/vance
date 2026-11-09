@@ -43,6 +43,13 @@ function historyFile(): string {
   return join(dir, "history.jsonl");
 }
 
+/** 设备批准文件也放临时目录：测试不碰用户真实的 ~/.vance/devices.json */
+function deviceStore(): string {
+  const dir = mkdtempSync(join(tmpdir(), "vance-devices-"));
+  tempDirs.push(dir);
+  return join(dir, "devices.json");
+}
+
 function makeServer(options: Omit<HostOptions, "historyFile"> & { historyFile?: string }): HostServer {
   const history = options.historyFile ?? historyFile();
   return new HostServer({
@@ -249,6 +256,54 @@ describe("HostServer", () => {
       ws.on("error", () => resolve(-1));
     });
     expect(code).toBe(4004);
+  });
+
+  it("已批准设备会写盘，重启后同一台免审批接回", async () => {
+    const store = deviceStore();
+    server = makeServer({ port: 0, token: "d1", pagePath: PAGE, deviceStorePath: store });
+    const { port } = await server.start();
+
+    const first = await listen(port, "d1", 1, "phone-a");
+    expect(first[0].type).toBe("hello");
+    const saved = JSON.parse(readFileSync(store, "utf8"));
+    expect(saved).toEqual([{ id: "phone-a", name: expect.any(String), approved: true }]);
+
+    await server.close();
+    server = null;
+
+    // 重启：新进程没有内存里的设备，只靠 devices.json
+    server = makeServer({ port: 0, token: "d1", pagePath: PAGE, deviceStorePath: store });
+    const { port: port2 } = await server.start();
+    const again = await listen(port2, "d1", 1, "phone-a");
+    expect(again[0].type).toBe("hello");
+    expect(again[0].device).toBe(first[0].device);
+  });
+
+  it("重启后新设备仍然要已有设备点头", async () => {
+    const store = deviceStore();
+    server = makeServer({ port: 0, token: "d2", pagePath: PAGE, deviceStorePath: store });
+    const { port } = await server.start();
+    await listen(port, "d2", 1, "phone-a");
+    await server.close();
+    server = null;
+
+    server = makeServer({ port: 0, token: "d2", pagePath: PAGE, deviceStorePath: store });
+    const { port: port2 } = await server.start();
+    const other = await listen(port2, "d2", 1, "phone-b");
+    expect(other[0].type).toBe("device_pending");
+  });
+
+  it("同一台设备断开重连会重新收到 hello", async () => {
+    server = makeServer({ port: 0, token: "d3", pagePath: PAGE, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const first = await listen(port, "d3", 1, "phone-r");
+    expect(first[0].type).toBe("hello");
+    await new Promise((r) => setTimeout(r, 80));
+
+    // 旧实现不把 attached 复位，第二次连接什么都收不到
+    const again = await listen(port, "d3", 1, "phone-r");
+    expect(again[0].type).toBe("hello");
   });
 });
 

@@ -16,7 +16,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { homedir, networkInterfaces } from "node:os";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, basename, extname, join, resolve, sep } from "node:path";
-import { WebSocketServer, type WebSocket } from "ws";
+import { WebSocketServer, WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
 
 /** 前端构建产物会出现的类型；其余按二进制发，别猜 */
@@ -142,6 +142,13 @@ export interface HostOptions {
   historyFile?: string;
   /** 权限档位文件，默认 ~/.vance/profile.json；重启后保留 */
   profileFile?: string;
+  /**
+   * 已批准设备的持久化文件（`~/.vance/devices.json`）。
+   *
+   * 不配就不持久化：测试默认不碰用户目录；host-demo 才传真实路径。
+   * 只存 approved 的设备；pending 的设备重启就重新走审批。
+   */
+  deviceStorePath?: string;
   /** 默认权限档位，默认 workspace */
   defaultProfile?: Profile;
   /** 取件单有效期（毫秒），默认 60 秒；测试可以调小 */
@@ -165,7 +172,8 @@ interface Device {
   name: string;
   ip: string;
   at: number;
-  socket: WebSocket;
+  /** 持久化恢复的设备可能还没有 socket */
+  socket: WebSocket | null;
   approved: boolean;
   attached?: boolean;
   /** 这台设备正在看哪条会话（默认等于 host 的活动会话） */
@@ -219,6 +227,9 @@ export class HostServer {
   /** 已知设备：id → 设备。approved=false 表示还在门口等 */
   private readonly devices = new Map<string, Device>();
 
+  /** 已批准设备的持久化文件；null = 不持久化（测试默认） */
+  private readonly deviceStorePath: string | null;
+
   /** 会话流水落盘，重启后还能接上 */
   private readonly historyFile: string;
 
@@ -239,11 +250,13 @@ export class HostServer {
     this.webDir = options.webDir ? resolve(options.webDir) : null;
     this.historyFile = options.historyFile ?? join(homedir(), ".vance", "history.jsonl");
     this.profileFile = options.profileFile ?? join(homedir(), ".vance", "profile.json");
+    this.deviceStorePath = options.deviceStorePath ? resolve(options.deviceStorePath) : null;
     this.ticketTtlMs = options.artifactTicketTtlMs ?? 60_000;
     const saved = this.loadProfile();
     // 完全权限是任务级的：重启不应该恢复成 full
     this.profile = saved && saved !== "full" ? saved : options.defaultProfile ?? "workspace";
     this.loadHistory();
+    this.loadDevices();
   }
 
   private loadProfile(): Profile | null {
@@ -261,6 +274,52 @@ export class HostServer {
       mkdirSync(dirname(this.profileFile), { recursive: true });
       writeFileSync(this.profileFile, JSON.stringify({ profile: this.profile }) + "\n");
     } catch {}
+  }
+
+  /**
+   * [学习注] 设备批准落盘。
+   *
+   * 只记 approved；pending 不记——门口的设备重启后还要重新点头。
+   * 不配 deviceStorePath 就完全不碰磁盘（host 的单测不写用户 ~/.vance）。
+   */
+  private loadDevices(): void {
+    if (!this.deviceStorePath) return;
+    try {
+      if (!existsSync(this.deviceStorePath)) return;
+      const raw = JSON.parse(readFileSync(this.deviceStorePath, "utf8")) as unknown;
+      if (!Array.isArray(raw)) return;
+      for (const item of raw) {
+        if (typeof item !== "object" || item === null) continue;
+        const id = (item as { id?: unknown }).id;
+        if (typeof id !== "string" || id === "") continue;
+        const name = (item as { name?: unknown }).name;
+        this.devices.set(id, {
+          id,
+          name: typeof name === "string" && name ? name : `设备-${id.slice(0, 4)}`,
+          ip: "",
+          at: Date.now(),
+          socket: null,
+          approved: true,
+          attached: false,
+        });
+      }
+      console.log(`[host] 已恢复 ${this.devices.size} 台已批准设备`);
+    } catch {
+      /* 坏文件当没配对；最多再走一次审批，不阻断启动 */
+    }
+  }
+
+  private saveDevices(): void {
+    if (!this.deviceStorePath) return;
+    try {
+      const items = [...this.devices.values()]
+        .filter((d) => d.approved)
+        .map((d) => ({ id: d.id, name: d.name, approved: true }));
+      mkdirSync(dirname(this.deviceStorePath), { recursive: true });
+      writeFileSync(this.deviceStorePath, `${JSON.stringify(items, null, 2)}\n`);
+    } catch {
+      /* 写不进去不影响本次连接；下次重启最多再审批一次 */
+    }
   }
 
   /** 当前权限档位（host-demo 判定时读它） */
@@ -914,8 +973,17 @@ export class HostServer {
         socket,
         approved: firstEver,
       };
+      // 同一台设备重连：旧 socket 可能还挂着；先关掉，否则 attached 会挡掉 hello。
+      const previous = device.socket;
+      if (previous && previous !== socket) {
+        try {
+          previous.close(4000, "replaced");
+        } catch {}
+      }
       device.socket = socket;
       device.attached = false;
+      device.ip = ip;
+      device.at = Date.now();
       device.viewSessionId = viewSession ?? UNASSIGNED_SESSION;
       this.devices.set(deviceId, device);
 
@@ -955,7 +1023,8 @@ export class HostServer {
   /** ①③ 让已连设备决定要不要放新设备进来 */
   private askExisting(device: Device): void {
     for (const d of this.devices.values()) {
-      if (d.approved && d.socket.readyState === d.socket.OPEN) {
+      if (!d.socket) continue;
+      if (d.approved && d.socket.readyState === WebSocket.OPEN) {
         d.socket.send(
           JSON.stringify({
             type: "device_request",
@@ -980,9 +1049,12 @@ export class HostServer {
   /** 真正把一台设备接进来：发 hello + 历史 + 待办，并挂上消息处理 */
   private attach(device: Device): void {
     const socket = device.socket;
+    if (!socket) return;
     if (device.attached) return;
     device.attached = true;
     this.clients.add(socket);
+    // 已批准的设备（首台 / 手工点头 / 免审批迁移）在这里落盘
+    this.saveDevices();
 
     console.log(`[host] 设备已连接：${device.name}（${device.ip}，共 ${this.clients.size} 台）`);
 
@@ -1010,7 +1082,8 @@ export class HostServer {
 
     // ① 告诉其他设备：又来了一台（看得见才叫可信）
     for (const d of this.devices.values()) {
-      if (d.approved && d.id !== device.id && d.socket.readyState === d.socket.OPEN) {
+      if (!d.socket) continue;
+      if (d.approved && d.id !== device.id && d.socket.readyState === WebSocket.OPEN) {
         d.socket.send(
           JSON.stringify({
             type: "notice",
@@ -1030,8 +1103,15 @@ export class HostServer {
       }
       this.handleMessage(socket, device, msg);
     });
-    socket.on("close", () => this.clients.delete(socket));
-    socket.on("error", () => this.clients.delete(socket));
+    const detach = () => {
+      this.clients.delete(socket);
+      if (device.socket === socket) {
+        device.socket = null;
+        device.attached = false;
+      }
+    };
+    socket.on("close", detach);
+    socket.on("error", detach);
   }
 
   private handleMessage(socket: WebSocket, device: Device, msg: any): void {
@@ -1041,8 +1121,9 @@ export class HostServer {
       if (!target) return;
       if (msg.allow) {
         target.approved = true;
-        target.socket.send(JSON.stringify({ type: "device_approved" }));
+        target.socket?.send(JSON.stringify({ type: "device_approved" }));
         this.attach(target);
+        this.saveDevices();
         this.emit({
           type: "notice",
           level: "auto",
@@ -1050,7 +1131,8 @@ export class HostServer {
         });
       } else {
         this.devices.delete(target.id);
-        try { target.socket.close(4004, "denied"); } catch {}
+        try { target.socket?.close(4004, "denied"); } catch {}
+        this.saveDevices();
         this.emit({
           type: "notice",
           level: "deny",
