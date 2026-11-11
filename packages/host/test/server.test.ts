@@ -721,6 +721,132 @@ describe("切换完全权限", () => {
   });
 });
 
+describe("计划级审批协议", () => {
+  it("提交计划 → 手机收到 plan_request → 批准 → 可查到 allowed", async () => {
+    server = makeServer({ port: 0, token: "plan1", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_plan", "计划任务");
+    const { port } = await server.start();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=plan1&device=plan-device`);
+    await waitForMessage(ws, (m) => m.type === "hello");
+
+    const requestPromise = waitForMessage(ws, (m) => m.type === "plan_request");
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan1" },
+      body: JSON.stringify({
+        title: "写一份页面",
+        steps: [
+          {
+            kind: "edit",
+            action_display: "写 index.html",
+            facts: { kind: "edit", effect: "write", writes: ["C:\\Users\\1\\Desktop\\plan\\index.html"] },
+          },
+        ],
+      }),
+    });
+    expect(created.status).toBe(200);
+    const createdBody = (await created.json()) as any;
+    expect(createdBody.ok).toBe(true);
+    expect(createdBody.plan_id).toMatch(/^plan_[0-9a-f]{16}$/);
+
+    const request = await requestPromise;
+    expect(request.plan_id).toBe(createdBody.plan_id);
+    expect(request.session_id).toBe("ses_plan");
+    expect(request.steps[0].action_display).toBe("写 index.html");
+    expect(request.steps[0].facts.kind).toBe("edit");
+
+    const pending = await fetch(`http://127.0.0.1:${port}/plan/${createdBody.plan_id}`, {
+      headers: { "x-vance-token": "plan1" },
+    });
+    expect(pending.status).toBe(200);
+    expect(((await pending.json()) as any).plan.status).toBe("pending");
+
+    const decisionPromise = waitForMessage(ws, (m) => m.type === "plan_decision");
+    const decided = await fetch(`http://127.0.0.1:${port}/plan/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan1" },
+      body: JSON.stringify({ plan_id: createdBody.plan_id, decision: "allow" }),
+    });
+    expect(decided.status).toBe(200);
+    expect(((await decided.json()) as any).plan.status).toBe("allowed");
+    const decision = await decisionPromise;
+    expect(decision.plan_id).toBe(createdBody.plan_id);
+    expect(decision.status).toBe("allowed");
+
+    const after = await fetch(`http://127.0.0.1:${port}/plan/${createdBody.plan_id}`, {
+      headers: { "x-vance-token": "plan1" },
+    });
+    expect(((await after.json()) as any).plan.status).toBe("allowed");
+    ws.close();
+  });
+
+  it("拒绝、重复决策、坏 body 和未鉴权都有明确结果", async () => {
+    server = makeServer({ port: 0, token: "plan2", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_plan2", "计划任务");
+    const { port } = await server.start();
+
+    const noAuth = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ steps: [{ action_display: "x" }] }),
+    });
+    expect(noAuth.status).toBe(401);
+
+    const bad = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan2" },
+      body: JSON.stringify({ steps: [] }),
+    });
+    expect(bad.status).toBe(400);
+
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan2" },
+      body: JSON.stringify({ steps: [{ action_display: "写 a" }] }),
+    });
+    const planId = ((await created.json()) as any).plan_id;
+
+    const rejected = await fetch(`http://127.0.0.1:${port}/plan/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan2" },
+      body: JSON.stringify({ plan_id: planId, decision: "reject" }),
+    });
+    expect(rejected.status).toBe(200);
+    expect(((await rejected.json()) as any).plan.status).toBe("rejected");
+
+    const again = await fetch(`http://127.0.0.1:${port}/plan/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan2" },
+      body: JSON.stringify({ plan_id: planId, decision: "allow" }),
+    });
+    expect(again.status).toBe(409);
+
+    const missing = await fetch(`http://127.0.0.1:${port}/plan/plan_missing`, {
+      headers: { "x-vance-token": "plan2" },
+    });
+    expect(missing.status).toBe(404);
+  });
+
+  it("手机晚连上也能补发还没决定的计划", async () => {
+    server = makeServer({ port: 0, token: "plan3", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_plan3", "计划任务");
+    const { port } = await server.start();
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan3" },
+      body: JSON.stringify({ steps: [{ action_display: "写 b" }] }),
+    });
+    const planId = ((await created.json()) as any).plan_id;
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=plan3&device=plan-device&session=ses_plan3`);
+    const replayPromise = waitForMessage(ws, (m) => m.type === "plan_request");
+    await waitForMessage(ws, (m) => m.type === "hello");
+    const replay = await replayPromise;
+    expect(replay.plan_id).toBe(planId);
+    ws.close();
+  });
+});
+
 describe("同一台设备的多个页面", () => {
   it("两个页面都能收到广播，不会互相踢下线", async () => {
     const s = makeServer({ port: 0, token: "dup1", pagePath: PAGE, approveAllDevices: true });

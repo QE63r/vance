@@ -1,6 +1,6 @@
 # ADR-0019：审批收敛（C：计划级审批）
 
-- 状态：**C1 + 档位优先已落地；C2 设计完成、未实现**（2026-11-11）
+- 状态：**C1 + 档位优先 + C2.1 host 计划协议已落地；C2.2/C2.3 未做**（2026-11-11）
 - 日期：2026-11-11
 - 关联：ADR-0012（权限档位）、`docs/task-approval-convergence.md`、`packages/policy`
 
@@ -30,9 +30,22 @@
 - 启动器在用户批准后，把“本轮同类”（`grantKey`）放进 `turnGrants`；
   同类第二次起自动；换任务/换一轮重新问。
 - UI 权限档位文案改成“工作区内写/脚本先问一次，本轮批准后同类放行”。
-- 测试：policy 21 条通过；原来的“直接放行”用例改成“先问”。
+- 测试：policy 22 条通过；原来的“直接放行”用例改成“先问”。
 
-### C2 计划内自动（设计完成、未实现）
+### C2 计划内自动（C2.1 host 协议已落地）
+
+**已实现（C2.1）：**
+
+- `POST /plan`（token）：接收 `{title?, steps[]}`，创建 `plan_<id>`；
+  每步只收 `kind / action_display / facts`，最多 50 步；返回 `plan_id / expires_at`
+- 计划归属当前活动会话；`plan_request` 推给手机，并进入流水
+- `GET /plan/:id`（token）：查询 pending/allowed/rejected/expired
+- `POST /plan/decision`（token）：`allow` / `reject`；非当前会话 409，
+  已决策 409，过期 410；发 `plan_decision`
+- 手机晚连上 / resync 会补发未决策计划；过期计划按 5 分钟 TTL 标记
+- 测试：host 47 条通过（新增 3 条协议用例）
+
+**未实现（C2.2 / C2.3）：**
 
 1. **Agent 提交计划**
    - MCP 工具 `vance_plan`：参数 `steps[]`，每步含
@@ -88,12 +101,12 @@ C1 让“计划外”真的会停下来，C2 才有意义。
 - 现在 workspace 写/脚本会多一次打断；批准后同类不再问。
 - `full` 是显式长期状态：跨轮、跨重启保持，直到手动切回；切到 `full` 时，
   已经挂起的非硬禁止审批自动批准（`by=auto-full`）；硬禁止不变。
-- C2 需要新协议、MCP 工具、计划卡；**未实现前不要声称“计划级审批已完成”**。
+- C2.1 协议已落地；MCP 工具、计划卡、计划 grants 未做，**未实现前不要声称“计划级审批已完成”**。
 - 计划审批不是“AI 摘要”；计划步骤来自 Agent 的事实/动作，人批的是具体动作。
 
 ## 没做什么
 
-- 没有实现 `vance_plan` MCP 工具、`/plan` 端点、计划卡。
-- 没有把“计划内自动”接进 `classifyApproval`。
+- 没有实现 `vance_plan` MCP 工具、手机计划卡。
+- 没有把“计划内自动”接进 `classifyApproval` / host-demo grants。
 - 没有做计划模板/计划变更重批。
 - 没有做多 Agent 的计划合并。

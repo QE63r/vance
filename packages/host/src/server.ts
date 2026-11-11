@@ -211,6 +211,29 @@ export interface DecisionRecord {
 
 type DecisionHandler = (record: DecisionRecord) => boolean;
 
+export type PlanStatus = "pending" | "allowed" | "rejected" | "expired";
+
+export interface PlanStep {
+  kind?: string;
+  action_display: string;
+  facts?: Record<string, unknown>;
+}
+
+export interface PlanRecord {
+  plan_id: string;
+  session_id: string;
+  title?: string;
+  steps: PlanStep[];
+  status: PlanStatus;
+  created_at: number;
+  expires_at: number;
+  decided_at?: number;
+  decided_by?: string;
+}
+
+type PlanDecision = "allow" | "reject";
+type PlanHandler = (plan: PlanRecord, decision: PlanDecision, by: string) => void;
+
 export class HostServer {
   private http: Server | null = null;
   private wss: WebSocketServer | null = null;
@@ -232,6 +255,12 @@ export class HostServer {
    * 而 Agent 还在那头等着。
    */
   private readonly pendingApprovals = new Map<string, { event: AgentEvent; sessionId: string }>();
+
+  /** 等手机批准的计划；批准后由启动器换成具体动作的 grants */
+  private readonly pendingPlans = new Map<string, PlanRecord>();
+  private readonly plans = new Map<string, PlanRecord>();
+  private readonly planTtlMs = 5 * 60_000;
+  private planHandler: PlanHandler | null = null;
 
   /** 规则的持有者；没有注入时 /rules 返回空列表 */
   private rules: RulesProvider | null = null;
@@ -461,6 +490,11 @@ export class HostServer {
     this.profileHandler = handler;
   }
 
+  /** 计划被批准/拒绝后通知上层；C2.2 用它换成计划 grants */
+  onPlanDecision(handler: PlanHandler): void {
+    this.planHandler = handler;
+  }
+
   /** 手机发来一句新指令（让它接着干下一件事） */
   onPrompt(handler: (text: string) => void): void {
     this.promptHandler = handler;
@@ -650,6 +684,91 @@ export class HostServer {
       this.pendingApprovals.set(event.request_id, { event, sessionId: sid });
     }
     this.emit({ type: "event", event });
+  }
+
+  private planRequestPayload(plan: PlanRecord): Record<string, unknown> {
+    return {
+      type: "plan_request",
+      plan_id: plan.plan_id,
+      session_id: plan.session_id,
+      title: plan.title,
+      steps: plan.steps,
+      created_at: plan.created_at,
+      expires_at: plan.expires_at,
+    };
+  }
+
+  private planDecisionPayload(plan: PlanRecord, by: string): Record<string, unknown> {
+    return {
+      type: "plan_decision",
+      plan_id: plan.plan_id,
+      status: plan.status,
+      decision: plan.status === "allowed" ? "allow" : "reject",
+      by,
+      at: plan.decided_at ?? Date.now(),
+    };
+  }
+
+  private expirePlan(plan: PlanRecord): boolean {
+    if (plan.status !== "pending" || Date.now() <= plan.expires_at) return false;
+    plan.status = "expired";
+    plan.decided_at = Date.now();
+    plan.decided_by = "timeout";
+    this.pendingPlans.delete(plan.plan_id);
+    this.emit(this.planDecisionPayload(plan, "timeout"));
+    return true;
+  }
+
+  /** Agent 提交一份计划；steps 由调用方校验过 */
+  createPlan(steps: PlanStep[], title?: string): PlanRecord {
+    const now = Date.now();
+    const plan: PlanRecord = {
+      plan_id: `plan_${randomBytes(8).toString("hex")}`,
+      session_id: this.activeSessionId ?? UNASSIGNED_SESSION,
+      ...(title ? { title } : {}),
+      steps,
+      status: "pending",
+      created_at: now,
+      expires_at: now + this.planTtlMs,
+    };
+    this.plans.set(plan.plan_id, plan);
+    this.pendingPlans.set(plan.plan_id, plan);
+    this.emit(this.planRequestPayload(plan));
+    return plan;
+  }
+
+  getPlan(planId: string): PlanRecord | null {
+    const plan = this.plans.get(planId);
+    if (!plan) return null;
+    this.expirePlan(plan);
+    return plan;
+  }
+
+  decidePlan(planId: string, decision: PlanDecision, by: string): { ok: boolean; error?: string; plan?: PlanRecord } {
+    const plan = this.plans.get(planId);
+    if (!plan) return { ok: false, error: "unknown-plan" };
+    if (plan.status !== "pending") return { ok: false, error: "already-decided", plan };
+    if (this.expirePlan(plan)) return { ok: false, error: "expired", plan };
+    if (plan.session_id !== (this.activeSessionId ?? UNASSIGNED_SESSION)) {
+      return { ok: false, error: "not-active", plan };
+    }
+    plan.status = decision === "allow" ? "allowed" : "rejected";
+    plan.decided_at = Date.now();
+    plan.decided_by = by;
+    this.pendingPlans.delete(planId);
+    this.planHandler?.(plan, decision, by);
+    this.emit(this.planDecisionPayload(plan, by));
+    return { ok: true, plan };
+  }
+
+  private pendingPlanPayloads(sessionId: string): Record<string, unknown>[] {
+    const out: Record<string, unknown>[] = [];
+    for (const plan of this.pendingPlans.values()) {
+      if (plan.session_id !== sessionId) continue;
+      if (this.expirePlan(plan)) continue;
+      out.push(this.planRequestPayload(plan));
+    }
+    return out;
   }
 
   /** 广播一帧屏幕画面（二进制 JPEG，不走 JSON，省 33% 体积） */
@@ -1128,6 +1247,144 @@ export class HostServer {
         });
         return;
       }
+      // 计划级审批：Agent 先提交具体步骤，人批准后由启动器换成计划 grants。
+      if (url.pathname === "/plan") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 256_000) req.destroy();
+        });
+        req.on("end", () => {
+          let body: { title?: unknown; steps?: unknown } = {};
+          try {
+            body = JSON.parse(raw) as typeof body;
+          } catch {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "bad-json" }));
+            return;
+          }
+          const list = Array.isArray(body.steps) ? body.steps : [];
+          if (list.length < 1 || list.length > 50) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "steps-required" }));
+            return;
+          }
+          const steps: PlanStep[] = [];
+          for (const item of list) {
+            if (!item || typeof item !== "object") continue;
+            const step = item as { kind?: unknown; action_display?: unknown; facts?: unknown };
+            const display = typeof step.action_display === "string" ? step.action_display.trim() : "";
+            if (!display) continue;
+            const facts =
+              step.facts && typeof step.facts === "object" && !Array.isArray(step.facts)
+                ? (step.facts as Record<string, unknown>)
+                : undefined;
+            steps.push({
+              action_display: display.slice(0, 4000),
+              ...(typeof step.kind === "string" ? { kind: step.kind.slice(0, 40) } : {}),
+              ...(facts ? { facts } : {}),
+            });
+          }
+          if (steps.length === 0) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "steps-empty" }));
+            return;
+          }
+          const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : undefined;
+          const plan = this.createPlan(steps, title);
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          res.end(JSON.stringify({ ok: true, plan_id: plan.plan_id, expires_at: plan.expires_at }));
+        });
+        return;
+      }
+
+      if (url.pathname === "/plan/decision") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 64_000) req.destroy();
+        });
+        req.on("end", () => {
+          let body: { plan_id?: unknown; decision?: unknown } = {};
+          try {
+            body = JSON.parse(raw) as typeof body;
+          } catch {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "bad-json" }));
+            return;
+          }
+          const planId = typeof body.plan_id === "string" ? body.plan_id : "";
+          const decision = body.decision === "allow" || body.decision === "reject" ? body.decision : "";
+          if (!planId || !decision) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "plan_id-and-decision-required" }));
+            return;
+          }
+          const result = this.decidePlan(planId, decision, "phone");
+          if (!result.ok) {
+            const code = result.error === "unknown-plan" ? 404 : result.error === "expired" ? 410 : 409;
+            res.writeHead(code, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: result.error, plan: result.plan ?? null }));
+            return;
+          }
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          res.end(JSON.stringify({ ok: true, plan: result.plan }));
+        });
+        return;
+      }
+
+      if (url.pathname.startsWith("/plan/")) {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { allow: "GET, HEAD" });
+          res.end("method not allowed");
+          return;
+        }
+        let planId = "";
+        try {
+          planId = decodeURIComponent(url.pathname.slice("/plan/".length));
+        } catch {
+          res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+          res.end("bad path");
+          return;
+        }
+        const plan = planId ? this.getPlan(planId) : null;
+        if (!plan) {
+          res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unknown-plan" }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(req.method === "HEAD" ? undefined : JSON.stringify({ ok: true, plan }));
+        return;
+      }
+
       if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
         this.serveWeb(req, res, url.pathname);
         return;
@@ -1242,12 +1499,16 @@ export class HostServer {
     }
   }
 
-  /** 某条会话的流水；审批请求不重放（它们该以 pending 形式单独补发） */
+  /** 某条会话的流水；审批/计划请求不重放（它们该以 pending 形式单独补发） */
   private historyFor(sessionId: string): unknown[] {
     return this.history
       .filter((h) => h.session_id === sessionId)
       .map((h) => h.msg)
-      .filter((m) => !((m as any)?.type === "event" && (m as any)?.event?.type === "approval_request"));
+      .filter((m) => {
+        const type = (m as any)?.type;
+        if (type === "plan_request") return false;
+        return !(type === "event" && (m as any)?.event?.type === "approval_request");
+      });
   }
 
   /** 真正把一台设备接进来：发 hello + 历史 + 待办，并挂上消息处理 */
@@ -1283,6 +1544,7 @@ export class HostServer {
       if (pending.sessionId !== view) continue;
       socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: view }));
     }
+    for (const plan of this.pendingPlanPayloads(view)) socket.send(JSON.stringify(plan));
 
     // ① 告诉其他设备：又来了一台（看得见才叫可信）
     for (const d of this.devices.values()) {
@@ -1354,6 +1616,7 @@ export class HostServer {
         if (pending.sessionId !== view) continue;
         socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: view }));
       }
+      for (const plan of this.pendingPlanPayloads(view)) socket.send(JSON.stringify(plan));
       return;
     }
     if (msg?.type === "session/new") {
@@ -1401,6 +1664,7 @@ export class HostServer {
             if (pending.sessionId !== target.id) continue;
             socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: target.id }));
           }
+          for (const plan of this.pendingPlanPayloads(target.id)) socket.send(JSON.stringify(plan));
         } catch (err) {
           if (socket.readyState === WebSocket.OPEN) {
             socket.send(
@@ -1444,6 +1708,7 @@ export class HostServer {
         if (pending.sessionId !== target.id) continue;
         socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: target.id }));
       }
+      for (const plan of this.pendingPlanPayloads(target.id)) socket.send(JSON.stringify(plan));
       return;
     }
     if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {
