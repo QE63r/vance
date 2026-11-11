@@ -216,6 +216,7 @@ export class HostServer {
   private wss: WebSocketServer | null = null;
   private readonly clients = new Set<WebSocket>();
   private handler: DecisionHandler | null = null;
+  private profileHandler: ((profile: Profile, from: Profile) => void) | null = null;
   private promptHandler: ((text: string) => void) | null = null;
   private stopHandler: (() => void) | null = null;
   private sessionNewHandler: (() => Promise<string>) | null = null;
@@ -366,6 +367,9 @@ export class HostServer {
     this.profile = profile;
     this.saveProfile();
     this.emit({ type: "profile", profile, from, by, at: Date.now() });
+    // 提档后可能要把“已经挂在手机上”的旧档位审批接过去；
+    // 这由上层决定，server 只通知，不替用户点。
+    this.profileHandler?.(profile, from);
     return true;
   }
 
@@ -450,6 +454,11 @@ export class HostServer {
   /** 谁来决定；返回 false 表示"这条请求已经失效或不存在" */
   onDecision(handler: DecisionHandler): void {
     this.handler = handler;
+  }
+
+  /** 档位切换后通知上层；上层可据此处理已经挂着的审批 */
+  onProfileChange(handler: (profile: Profile, from: Profile) => void): void {
+    this.profileHandler = handler;
   }
 
   /** 手机发来一句新指令（让它接着干下一件事） */
@@ -653,6 +662,20 @@ export class HostServer {
   /** 主动忘掉一条请求（超时、Agent 自己撤回等情况） */
   forget(requestId: string): void {
     this.pendingApprovals.delete(requestId);
+  }
+
+  /**
+   * 由 host 自己替一条已挂起的审批落决定。
+   * 只在上层明确要求时用（例如用户刚把档位提到 full）；不替用户做默认决定。
+   */
+  resolveApproval(requestId: string, decision: Decision = "allow", by = "host"): boolean {
+    if (!this.pendingApprovals.has(requestId)) return false;
+    const accepted = this.handler?.({ requestId, decision, by }) ?? false;
+    if (!accepted) return false;
+    this.pendingApprovals.delete(requestId);
+    this.emit({ type: "decision", requestId, decision, by, at: Date.now() });
+    this.sendAll({ type: "ack", requestId, accepted: true });
+    return true;
   }
 
   /** 当前连了几台设备 */

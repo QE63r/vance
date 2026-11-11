@@ -688,6 +688,39 @@ describe("权限档位（host）", () => {
   });
 });
 
+describe("切换完全权限", () => {
+  it("能替已经挂起的审批落 allow，并带上 auto-full", () => {
+    const s = makeServer({ port: 0, token: "full1", pagePath: PAGE, approveAllDevices: true });
+    server = s;
+    s.useSession("ses_full", "提档");
+    let got: { requestId: string; decision: string; by?: string } | null = null;
+    s.onDecision((record) => {
+      got = record;
+      return true;
+    });
+    s.broadcast({
+      type: "approval_request",
+      request_id: "call_full",
+      agent_id: "agent",
+      project_id: "sandbox",
+      timestamp: Date.now(),
+      action_display: "写文件",
+      facts: { kind: "edit", effect: "write", writes: ["C:\\Users\\1\\Desktop\\a.txt"] },
+      raw_digest: "a".repeat(64),
+      raw_ref: { key: "k", length: 1 },
+      nonce: "n".repeat(16),
+      expires_at: Date.now() + 180_000,
+      policy_version: "test",
+      signer: "host",
+      signature: "sig",
+    });
+    expect(s.resolveApproval("call_full", "allow", "auto-full")).toBe(true);
+    expect(got?.requestId).toBe("call_full");
+    expect(got?.decision).toBe("allow");
+    expect(got?.by).toBe("auto-full");
+  });
+});
+
 describe("同一台设备的多个页面", () => {
   it("两个页面都能收到广播，不会互相踢下线", async () => {
     const s = makeServer({ port: 0, token: "dup1", pagePath: PAGE, approveAllDevices: true });

@@ -218,6 +218,16 @@ host.onDecision(({ requestId, decision, by }) => {
   return true;
 });
 
+// 从工作区切到完全权限时，已经把卡发到手机上的旧请求不该再挡着。
+// 用户提档本身就是“这些非硬禁止动作都放”的明确选择；逐条自动批准，并留审计。
+host.onProfileChange((profile) => {
+  if (profile !== "full") return;
+  const waiting = [...pending.keys()];
+  if (waiting.length === 0) return;
+  for (const requestId of waiting) host.resolveApproval(requestId, "allow", "auto-full");
+  host.broadcastNotice("auto", `完全权限：已自动批准 ${waiting.length} 条等待中的操作`);
+});
+
 const { port, urls } = await host.start();
 
 // ── 实时画面：有手机连着才抓屏，没人看就停（不白烧 CPU） ──
