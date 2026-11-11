@@ -135,14 +135,15 @@ export function classifyApproval(
   const profile: Profile = opts.profile ?? "workspace";
   const facts = event.facts ?? {};
 
-  if ((opts.remembered ?? []).includes(treatKey(event))) {
-    return ALLOW("你之前批准过同样的操作");
-  }
-
   if (profile === "full") return ALLOW("完全权限（当前任务）");
 
   const effect = factString(facts, "effect", "unknown");
   if (profile === "read-only") return readOnlyVerdict(event);
+
+  // 记住的规则只能在 workspace 的天花板下面免问；不能绕过 full/read-only。
+  if ((opts.remembered ?? []).includes(treatKey(event))) {
+    return ALLOW("你之前批准过同样的操作");
+  }
 
   // workspace：读自动；工作区内的写/删/脚本先问一次。
   // “本轮同类放行”由启动器在批准后处理，不在策略层偷偷放。

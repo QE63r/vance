@@ -80,6 +80,17 @@ describe("权限档位", () => {
     expect(classifyApproval(edit("C:\\Users\\1\\Desktop\\a.docx"), { profile: "read-only", workspaceRoots: roots }).auto).toBe(false);
   });
 
+  it("只读：记住过也要问，旧规则不能绕过只读", () => {
+    const event = edit("C:\\Users\\1\\Desktop\\a.docx");
+    expect(
+      classifyApproval(event, {
+        profile: "read-only",
+        workspaceRoots: roots,
+        remembered: [treatKey(event)],
+      }).auto,
+    ).toBe(false);
+  });
+
   it("完全：工作区外的写也放行，但硬禁止仍拦", () => {
     expect(classifyApproval(edit("C:\\other\\a.txt"), { profile: "full", workspaceRoots: roots }).auto).toBe(true);
     expect(classifyApproval(edit("C:\\Windows\\x.dll"), { profile: "full", workspaceRoots: roots }).deny).toBe(true);
