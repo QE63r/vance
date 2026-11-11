@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,12 @@ function deviceStore(): string {
   const dir = mkdtempSync(join(tmpdir(), "vance-devices-"));
   tempDirs.push(dir);
   return join(dir, "devices.json");
+}
+
+function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.push(dir);
+  return dir;
 }
 
 function makeServer(options: Omit<HostOptions, "historyFile"> & { historyFile?: string }): HostServer {
@@ -873,6 +879,114 @@ describe("计划级审批协议", () => {
     const replay = await replayPromise;
     expect(replay.plan_id).toBe(planId);
     ws.close();
+  });
+});
+
+describe("移动计划：策略与撤销清单", () => {
+  it("合法 move 计划留下撤销清单，并能撤回", async () => {
+    const dir = tempDir("vance-move-");
+    const policyFile = join(dir, "policy.json");
+    const undoDir = join(dir, "undo");
+    const from = join(dir, "from.txt");
+    const to = join(dir, "to.txt");
+    writeFileSync(from, "x", "utf8");
+
+    server = makeServer({
+      port: 0,
+      token: "move1",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      policyFile,
+      undoDir,
+    });
+    server.useSession("ses_move", "移动");
+    const { port } = await server.start();
+
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "move1" },
+      body: JSON.stringify({
+        steps: [{ action_display: "移动 from", facts: { moves: [{ from, to }] } }],
+      }),
+    });
+    expect(created.status).toBe(200);
+    const planId = ((await created.json()) as any).plan_id;
+
+    const got = (await (
+      await fetch(`http://127.0.0.1:${port}/plan/${planId}`, { headers: { "x-vance-token": "move1" } })
+    ).json()) as any;
+    expect(got.plan.moves).toEqual([{ from, to }]);
+
+    const decided = await fetch(`http://127.0.0.1:${port}/plan/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "move1" },
+      body: JSON.stringify({ plan_id: planId, decision: "allow" }),
+    });
+    expect(decided.status).toBe(200);
+    expect(existsSync(join(undoDir, `${planId}.json`))).toBe(true);
+
+    // 模拟 Agent 真的移动，然后走撤销接口
+    renameSync(from, to);
+    const undo = await fetch(`http://127.0.0.1:${port}/undo/${planId}`, {
+      method: "POST",
+      headers: { "x-vance-token": "move1" },
+    });
+    expect(undo.status).toBe(200);
+    const undoBody = (await undo.json()) as any;
+    expect(undoBody.moved).toBe(1);
+    expect(existsSync(from)).toBe(true);
+    expect(existsSync(to)).toBe(false);
+  });
+
+  it("批量上限和禁止根目录会拒绝计划", async () => {
+    const dir = tempDir("vance-move-policy-");
+    const a = join(dir, "a.txt");
+    const b = join(dir, "b.txt");
+    server = makeServer({
+      port: 0,
+      token: "move2",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      policyFile: join(dir, "policy.json"),
+      undoDir: join(dir, "undo"),
+    });
+    server.useSession("ses_move2", "移动策略");
+    const { port } = await server.start();
+
+    const setPolicy = await fetch(`http://127.0.0.1:${port}/policy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "move2" },
+      body: JSON.stringify({ move: { maxBatch: 1, blockedRoots: [], requireUndo: true } }),
+    });
+    expect(setPolicy.status).toBe(200);
+
+    const tooMany = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "move2" },
+      body: JSON.stringify({
+        steps: [
+          {
+            action_display: "移动两个",
+            facts: { moves: [{ from: a, to: a + ".new" }, { from: b, to: b + ".new" }] },
+          },
+        ],
+      }),
+    });
+    expect(tooMany.status).toBe(400);
+    expect(((await tooMany.json()) as any).error).toBe("move-batch-too-large");
+
+    await fetch(`http://127.0.0.1:${port}/policy`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "move2" },
+      body: JSON.stringify({ move: { blockedRoots: [dir] } }),
+    });
+    const blocked = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "move2" },
+      body: JSON.stringify({ steps: [{ action_display: "移动 a", facts: { moves: [{ from: a, to: a + ".new" }] } }] }),
+    });
+    expect(blocked.status).toBe(400);
+    expect(((await blocked.json()) as any).error).toBe("move-blocked");
   });
 });
 

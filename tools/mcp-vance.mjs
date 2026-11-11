@@ -180,7 +180,7 @@ const TOOLS = [
   {
     name: "vance_plan",
     description:
-      "在写文件、删文件或运行脚本前，把计划提交到手机审批。必须等到返回 allowed 才能执行；rejected/expired/超时都不要执行。纯读取和回答不需要调用。",
+      "在写文件、删文件、移动文件或运行脚本前，把计划提交到手机审批。移动/重命名必须放 facts.moves:[{from,to}]；是否允许由 host 用户策略决定。必须等到返回 allowed 才能执行；rejected/expired/超时都不要执行。纯读取和回答不需要调用。",
     inputSchema: {
       type: "object",
       properties: {

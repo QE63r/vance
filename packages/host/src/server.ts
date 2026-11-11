@@ -14,8 +14,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir, networkInterfaces } from "node:os";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, basename, extname, join, resolve, sep } from "node:path";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { dirname, basename, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
 
@@ -175,6 +175,10 @@ export interface HostOptions {
    * host-demo 传 `~/.vance/artifacts.json`；测试传临时目录。
    */
   artifactStoreFile?: string;
+  /** 用户移动策略文件，默认不持久化；host-demo 传 ~/.vance/policy.json */
+  policyFile?: string;
+  /** 撤销清单目录，默认不持久化；host-demo 传 ~/.vance/undo */
+  undoDir?: string;
   /** 监听地址，默认 0.0.0.0（局域网可访问） */
   hostname?: string;
   /** 项目名，展示用 */
@@ -213,6 +217,11 @@ type DecisionHandler = (record: DecisionRecord) => boolean;
 
 export type PlanStatus = "pending" | "allowed" | "rejected" | "expired";
 
+export interface PlanMove {
+  from: string;
+  to: string;
+}
+
 export interface PlanStep {
   kind?: string;
   action_display: string;
@@ -224,11 +233,29 @@ export interface PlanRecord {
   session_id: string;
   title?: string;
   steps: PlanStep[];
+  moves?: PlanMove[];
+  undo_file?: string;
   status: PlanStatus;
   created_at: number;
   expires_at: number;
   decided_at?: number;
   decided_by?: string;
+}
+
+export interface MovePolicy {
+  /** 单份计划最多移动多少个文件 */
+  maxBatch: number;
+  /** 这些根目录下的移动直接拒绝（用户把桌面、项目目录放进来） */
+  blockedRoots: string[];
+  /** 移动批准后是否必须留撤销清单 */
+  requireUndo: boolean;
+}
+
+interface UndoManifest {
+  plan_id: string;
+  created_at?: number;
+  moves: PlanMove[];
+  status: "pending" | "partial" | "done";
 }
 
 /** 计划步骤至少要落到一个具体目标；只有“整理一下”这种描述不算。 */
@@ -246,7 +273,23 @@ function planStepHasTarget(step: PlanStep): boolean {
       .map((p) => p.trim())
       .some((p) => /^[A-Za-z]:[\\/]/.test(p));
   }
-  return false;
+  return planMoves(step).length > 0;
+}
+
+function planMoves(step: PlanStep): PlanMove[] {
+  const raw = step.facts?.moves;
+  if (!Array.isArray(raw)) return [];
+  const out: PlanMove[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const move = item as { from?: unknown; to?: unknown };
+    if (typeof move.from !== "string" || typeof move.to !== "string") continue;
+    const from = move.from.trim();
+    const to = move.to.trim();
+    if (!from || !to) continue;
+    out.push({ from, to });
+  }
+  return out;
 }
 
 type PlanDecision = "allow" | "reject";
@@ -319,6 +362,11 @@ export class HostServer {
   private readonly artifactRecords: ArtifactRecord[] = [];
   private readonly artifactStoreFile: string | null;
 
+  /** 用户移动策略；默认 20 个一批、不额外封目录、必须留撤销清单 */
+  private movePolicy: MovePolicy = { maxBatch: 20, blockedRoots: [], requireUndo: true };
+  private readonly policyFile: string | null;
+  private readonly undoDir: string | null;
+
   /** 构建产物目录的绝对路径；没配就是 null（只有测试台，没有真前端） */
   private readonly webDir: string | null;
 
@@ -330,6 +378,9 @@ export class HostServer {
     this.deviceStorePath = options.deviceStorePath ? resolve(options.deviceStorePath) : null;
     this.ticketTtlMs = options.artifactTicketTtlMs ?? 60_000;
     this.artifactStoreFile = options.artifactStoreFile ? resolve(options.artifactStoreFile) : null;
+    this.policyFile = options.policyFile ? resolve(options.policyFile) : null;
+    this.undoDir = options.undoDir ? resolve(options.undoDir) : null;
+    this.loadMovePolicy();
     const saved = this.loadProfile();
     // 完全权限是任务级的：重启不应该恢复成 full
     this.profile = saved && saved !== "full" ? saved : options.defaultProfile ?? "workspace";
@@ -346,6 +397,59 @@ export class HostServer {
     } catch {
       return null;
     }
+  }
+
+  private loadMovePolicy(): void {
+    if (!this.policyFile) return;
+    try {
+      if (!existsSync(this.policyFile)) return;
+      const raw = JSON.parse(readFileSync(this.policyFile, "utf8")) as { move?: Partial<MovePolicy> };
+      const move = raw.move ?? {};
+      if (typeof move.maxBatch === "number" && Number.isFinite(move.maxBatch) && move.maxBatch > 0) {
+        this.movePolicy.maxBatch = Math.floor(move.maxBatch);
+      }
+      if (Array.isArray(move.blockedRoots)) {
+        this.movePolicy.blockedRoots = move.blockedRoots.filter((p): p is string => typeof p === "string" && p.trim() !== "");
+      }
+      if (typeof move.requireUndo === "boolean") this.movePolicy.requireUndo = move.requireUndo;
+    } catch {
+      // 坏策略文件不阻止启动；回默认（更保守的一批 20 个）
+    }
+  }
+
+  private saveMovePolicy(): void {
+    if (!this.policyFile) return;
+    try {
+      mkdirSync(dirname(this.policyFile), { recursive: true });
+      writeFileSync(this.policyFile, JSON.stringify({ move: this.movePolicy }, null, 2), "utf8");
+    } catch {}
+  }
+
+  private pathBlockedByPolicy(path: string): boolean {
+    const p = path.toLowerCase().replace(/[\\/]+$/, "");
+    return this.movePolicy.blockedRoots.some((root) => {
+      const r = root.toLowerCase().replace(/[\\/]+$/, "");
+      return p === r || p.startsWith(r + "\\") || p.startsWith(r + "/");
+    });
+  }
+
+  private recordUndo(plan: PlanRecord): void {
+    if (!plan.moves || plan.moves.length === 0 || !this.movePolicy.requireUndo) return;
+    if (!this.undoDir) return;
+    try {
+      mkdirSync(this.undoDir, { recursive: true });
+      const file = join(this.undoDir, `${plan.plan_id}.json`);
+      writeFileSync(
+        file,
+        JSON.stringify(
+          { plan_id: plan.plan_id, created_at: Date.now(), moves: plan.moves, status: "pending" },
+          null,
+          2,
+        ),
+        "utf8",
+      );
+      plan.undo_file = file;
+    } catch {}
   }
 
   private saveProfile(): void {
@@ -711,6 +815,7 @@ export class HostServer {
       session_id: plan.session_id,
       title: plan.title,
       steps: plan.steps,
+      moves: plan.moves ?? [],
       created_at: plan.created_at,
       expires_at: plan.expires_at,
     };
@@ -738,13 +843,14 @@ export class HostServer {
   }
 
   /** Agent 提交一份计划；steps 由调用方校验过 */
-  createPlan(steps: PlanStep[], title?: string): PlanRecord {
+  createPlan(steps: PlanStep[], title?: string, moves: PlanMove[] = []): PlanRecord {
     const now = Date.now();
     const plan: PlanRecord = {
       plan_id: `plan_${randomBytes(8).toString("hex")}`,
       session_id: this.activeSessionId ?? UNASSIGNED_SESSION,
       ...(title ? { title } : {}),
       steps,
+      ...(moves.length > 0 ? { moves } : {}),
       status: "pending",
       created_at: now,
       expires_at: now + this.planTtlMs,
@@ -755,6 +861,7 @@ export class HostServer {
       plan.status = "allowed";
       plan.decided_at = now;
       plan.decided_by = "auto-full";
+      this.recordUndo(plan);
       this.emit(this.planDecisionPayload(plan, "auto-full"));
       return plan;
     }
@@ -781,6 +888,7 @@ export class HostServer {
     plan.status = decision === "allow" ? "allowed" : "rejected";
     plan.decided_at = Date.now();
     plan.decided_by = by;
+    if (decision === "allow") this.recordUndo(plan);
     this.pendingPlans.delete(planId);
     this.planHandler?.(plan, decision, by);
     this.emit(this.planDecisionPayload(plan, by));
@@ -1273,6 +1381,130 @@ export class HostServer {
         });
         return;
       }
+      // 用户移动策略：批量上限 / 禁止根目录 / 是否必须留撤销清单。
+      if (url.pathname === "/policy") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method === "GET" || req.method === "HEAD") {
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          res.end(req.method === "HEAD" ? undefined : JSON.stringify({ move: this.movePolicy }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "GET, HEAD, POST" });
+          res.end("method not allowed");
+          return;
+        }
+        let raw = "";
+        req.setEncoding("utf8");
+        req.on("data", (chunk: string) => {
+          raw += chunk;
+          if (raw.length > 64_000) req.destroy();
+        });
+        req.on("end", () => {
+          let body: { move?: Partial<MovePolicy> } = {};
+          try {
+            body = JSON.parse(raw) as typeof body;
+          } catch {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "bad-json" }));
+            return;
+          }
+          const move = body.move ?? {};
+          if (move.maxBatch !== undefined) {
+            if (typeof move.maxBatch !== "number" || !Number.isFinite(move.maxBatch) || move.maxBatch < 1) {
+              res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify({ ok: false, error: "bad-max-batch" }));
+              return;
+            }
+            this.movePolicy.maxBatch = Math.floor(move.maxBatch);
+          }
+          if (move.blockedRoots !== undefined) {
+            if (!Array.isArray(move.blockedRoots) || move.blockedRoots.some((p) => typeof p !== "string")) {
+              res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify({ ok: false, error: "bad-blocked-roots" }));
+              return;
+            }
+            this.movePolicy.blockedRoots = move.blockedRoots.filter((p) => p.trim() !== "");
+          }
+          if (move.requireUndo !== undefined) {
+            if (typeof move.requireUndo !== "boolean") {
+              res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+              res.end(JSON.stringify({ ok: false, error: "bad-require-undo" }));
+              return;
+            }
+            this.movePolicy.requireUndo = move.requireUndo;
+          }
+          this.saveMovePolicy();
+          res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+          res.end(JSON.stringify({ ok: true, move: this.movePolicy }));
+        });
+        return;
+      }
+
+      // 撤销清单：按计划号把 move 反向做回去。只处理清单里的路径。
+      if (url.pathname.startsWith("/undo/")) {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "POST") {
+          res.writeHead(405, { allow: "POST" });
+          res.end("method not allowed");
+          return;
+        }
+        const planId = url.pathname.slice("/undo/".length);
+        if (!/^[A-Za-z0-9_-]+$/.test(planId) || !this.undoDir) {
+          res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unknown-undo" }));
+          return;
+        }
+        const file = join(this.undoDir, `${planId}.json`);
+        let manifest: UndoManifest | null = null;
+        try {
+          manifest = JSON.parse(readFileSync(file, "utf8")) as UndoManifest;
+        } catch {
+          res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unknown-undo" }));
+          return;
+        }
+        if (!manifest || !Array.isArray(manifest.moves) || manifest.status === "done") {
+          res.writeHead(409, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "undo-not-pending" }));
+          return;
+        }
+        const failed: Array<{ from: string; to: string; reason: string }> = [];
+        let moved = 0;
+        for (const m of manifest.moves) {
+          if (!m || typeof m.from !== "string" || typeof m.to !== "string") continue;
+          if (!existsSync(m.to)) {
+            failed.push({ ...m, reason: "target-missing" });
+            continue;
+          }
+          if (existsSync(m.from)) {
+            failed.push({ ...m, reason: "source-exists" });
+            continue;
+          }
+          try {
+            renameSync(m.to, m.from);
+            moved += 1;
+          } catch (err) {
+            failed.push({ ...m, reason: String((err as Error)?.message ?? err).slice(0, 120) });
+          }
+        }
+        manifest.status = failed.length === 0 ? "done" : "partial";
+        try {
+          writeFileSync(file, JSON.stringify(manifest, null, 2), "utf8");
+        } catch {}
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(JSON.stringify({ ok: failed.length === 0, moved, failed }));
+        return;
+      }
+
       // 计划级审批：Agent 先提交具体步骤，人批准后由启动器换成计划 grants。
       if (url.pathname === "/plan") {
         if (!this.authorized(req)) {
@@ -1332,8 +1564,55 @@ export class HostServer {
             res.end(JSON.stringify({ ok: false, error: "plan-needs-target" }));
             return;
           }
+
+          const moves: PlanMove[] = [];
+          let moveError = "";
+          for (const step of steps) {
+            const rawMoves = step.facts?.moves;
+            if (rawMoves === undefined) continue;
+            if (!Array.isArray(rawMoves)) {
+              moveError = "move-invalid";
+              break;
+            }
+            for (const item of rawMoves) {
+              if (!item || typeof item !== "object") {
+                moveError = "move-invalid";
+                break;
+              }
+              const m = item as { from?: unknown; to?: unknown };
+              const from = typeof m.from === "string" ? m.from.trim() : "";
+              const to = typeof m.to === "string" ? m.to.trim() : "";
+              const absolute = (p: string): boolean => /^[A-Za-z]:[\\/]/.test(p) || p.startsWith("\\\\") || isAbsolute(p);
+              if (!from || !to || !absolute(from) || !absolute(to) || from.toLowerCase() === to.toLowerCase()) {
+                moveError = "move-invalid";
+                break;
+              }
+              moves.push({ from, to });
+            }
+            if (moveError) break;
+          }
+          if (moveError) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: moveError }));
+            return;
+          }
+          if (moves.length > this.movePolicy.maxBatch) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "move-batch-too-large", max: this.movePolicy.maxBatch }));
+            return;
+          }
+          if (moves.some((m) => this.pathBlockedByPolicy(m.from) || this.pathBlockedByPolicy(m.to))) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "move-blocked" }));
+            return;
+          }
+          if (moves.length > 0 && this.movePolicy.requireUndo && !this.undoDir) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "undo-not-configured" }));
+            return;
+          }
           const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : undefined;
-          const plan = this.createPlan(steps, title);
+          const plan = this.createPlan(steps, title, moves);
           res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
           res.end(JSON.stringify({ ok: true, plan_id: plan.plan_id, expires_at: plan.expires_at }));
         });

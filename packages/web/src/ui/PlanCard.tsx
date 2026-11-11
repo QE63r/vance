@@ -25,9 +25,19 @@ function StepFacts({ facts }: { facts?: Record<string, unknown> }) {
   const deletes = asStrings(facts.deletes);
   const script = typeof facts.script === "string" ? facts.script : "";
   const program = typeof facts.program === "string" ? facts.program : "";
+  const moves = Array.isArray(facts.moves)
+    ? facts.moves
+        .filter((m): m is { from: string; to: string } => Boolean(m && typeof m === "object"))
+        .map((m) => {
+          const item = m as { from?: unknown; to?: unknown };
+          return { from: String(item.from ?? ""), to: String(item.to ?? "") };
+        })
+        .filter((m) => m.from && m.to)
+    : [];
   const rows: Array<[string, string]> = [
     ...writes.map((p): [string, string] => ["写", p]),
     ...deletes.map((p): [string, string] => ["删", p]),
+    ...moves.map((m): [string, string] => ["移动", `${m.from} → ${m.to}`]),
     ...(script ? ([["脚本", script]] as Array<[string, string]>) : []),
     ...(program ? ([["程序", program]] as Array<[string, string]>) : []),
   ];

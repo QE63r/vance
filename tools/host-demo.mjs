@@ -77,6 +77,13 @@ function planPaths(event) {
     .flatMap((v) => (Array.isArray(v) ? v : []))
     .map((p) => String(p).trim());
   if (typeof facts.script === "string" && facts.script.trim()) raw.push(facts.script.trim());
+  if (Array.isArray(facts.moves)) {
+    for (const m of facts.moves) {
+      if (!m || typeof m !== "object") continue;
+      if (typeof m.from === "string" && m.from.trim()) raw.push(m.from.trim());
+      if (typeof m.to === "string" && m.to.trim()) raw.push(m.to.trim());
+    }
+  }
   if (typeof facts.files === "string" && facts.files.trim()) {
     for (const part of facts.files.split(",")) {
       const p = part.trim();
@@ -220,6 +227,8 @@ const host = new HostServer({
   projectName: "sandbox",
   deviceStorePath: join(homedir(), ".vance", "devices.json"),
   artifactStoreFile: join(homedir(), ".vance", "artifacts.json"),
+  policyFile: join(homedir(), ".vance", "policy.json"),
+  undoDir: join(homedir(), ".vance", "undo"),
   // 不启用 approveAllDevices：配对只走“首台自动信任 / 已记录设备”。
   // 临时免审批只留给单测，不在启动器里开。
 });
