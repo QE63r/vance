@@ -71,10 +71,18 @@ async function getPlan(planId) {
 async function submitPlan(args) {
   const steps = Array.isArray(args.steps) ? args.steps : [];
   if (steps.length === 0) throw new Error("steps 不能为空");
-  const created = await postJson("/plan", {
-    title: typeof args.title === "string" ? args.title : undefined,
-    steps,
-  });
+  let created;
+  try {
+    created = await postJson("/plan", {
+      title: typeof args.title === "string" ? args.title : undefined,
+      steps,
+    });
+  } catch (err) {
+    if (String(err).includes("plan-needs-target")) {
+      throw new Error("计划没有具体目标。先读/扫描出具体文件路径，再提交；如果连范围都说不清，先问用户。");
+    }
+    throw err;
+  }
   const planId = created.plan_id;
   log("计划已提交", planId);
 

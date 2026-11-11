@@ -231,6 +231,24 @@ export interface PlanRecord {
   decided_by?: string;
 }
 
+/** 计划步骤至少要落到一个具体目标；只有“整理一下”这种描述不算。 */
+function planStepHasTarget(step: PlanStep): boolean {
+  const facts = step.facts ?? {};
+  const writes = Array.isArray(facts.writes) ? facts.writes : [];
+  const deletes = Array.isArray(facts.deletes) ? facts.deletes : [];
+  if (writes.some((p) => typeof p === "string" && p.trim()) || deletes.some((p) => typeof p === "string" && p.trim())) {
+    return true;
+  }
+  if (typeof facts.script === "string" && facts.script.trim()) return true;
+  if (typeof facts.files === "string") {
+    return facts.files
+      .split(",")
+      .map((p) => p.trim())
+      .some((p) => /^[A-Za-z]:[\\/]/.test(p));
+  }
+  return false;
+}
+
 type PlanDecision = "allow" | "reject";
 type PlanHandler = (plan: PlanRecord, decision: PlanDecision, by: string) => void;
 
@@ -1307,6 +1325,11 @@ export class HostServer {
           if (steps.length === 0) {
             res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
             res.end(JSON.stringify({ ok: false, error: "steps-empty" }));
+            return;
+          }
+          if (!steps.some(planStepHasTarget)) {
+            res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+            res.end(JSON.stringify({ ok: false, error: "plan-needs-target" }));
             return;
           }
           const title = typeof body.title === "string" ? body.title.trim().slice(0, 200) : undefined;

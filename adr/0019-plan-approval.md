@@ -40,6 +40,8 @@
    - `POST /plan`（token）：接收 `{title?, steps[]}`，创建 `plan_<id>`；
      每步只收 `kind / action_display / facts`，最多 50 步；返回 `plan_id / expires_at`
    - 计划归属当前活动会话；`plan_request` 推给手机，并进入流水
+   - 计划必须至少有一个具体目标（writes/deletes/script/files 中的真实路径）；
+     只有“整理一下”“清理一下”的计划直接 400 `plan-needs-target`，不生成空计划卡
    - `GET /plan/:id`（token）：查询 pending/allowed/rejected/expired
    - `POST /plan/decision`（token）：`allow` / `reject`；非当前会话 409，
      已决策 409，过期 410；发 `plan_decision`

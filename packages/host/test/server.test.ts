@@ -820,10 +820,18 @@ describe("计划级审批协议", () => {
     });
     expect(bad.status).toBe(400);
 
+    const vague = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan2" },
+      body: JSON.stringify({ steps: [{ action_display: "整理桌面" }] }),
+    });
+    expect(vague.status).toBe(400);
+    expect(((await vague.json()) as any).error).toBe("plan-needs-target");
+
     const created = await fetch(`http://127.0.0.1:${port}/plan`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-vance-token": "plan2" },
-      body: JSON.stringify({ steps: [{ action_display: "写 a" }] }),
+      body: JSON.stringify({ steps: [{ action_display: "写 a", facts: { writes: ["C:\\a"] } }] }),
     });
     const planId = ((await created.json()) as any).plan_id;
 
@@ -855,7 +863,7 @@ describe("计划级审批协议", () => {
     const created = await fetch(`http://127.0.0.1:${port}/plan`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-vance-token": "plan3" },
-      body: JSON.stringify({ steps: [{ action_display: "写 b" }] }),
+      body: JSON.stringify({ steps: [{ action_display: "写 b", facts: { writes: ["C:\\b"] } }] }),
     });
     const planId = ((await created.json()) as any).plan_id;
 
