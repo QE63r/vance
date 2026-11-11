@@ -365,6 +365,111 @@ button.chip {
   opacity: 0.6;
 }
 
+.card.plan {
+  border-color: #1e3a8a;
+  background: linear-gradient(180deg, #0a1424 0%, #0b1119 100%);
+}
+
+.card.plan-allowed {
+  border-color: #14532d;
+  background: #0a1710;
+}
+
+.card.plan-rejected,
+.card.plan-expired {
+  border-color: #263241;
+  background: #0c1219;
+  opacity: 0.65;
+}
+
+.plan-title {
+  margin-top: 5px;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.card.plan .card-kicker {
+  color: #93c5fd;
+}
+
+.card.plan-allowed .card-kicker {
+  color: #86efac;
+}
+
+.plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.plan-step {
+  border: 1px solid #1d2937;
+  border-radius: 9px;
+  padding: 7px 8px;
+  background: #0b1119;
+}
+
+.plan-step-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plan-step-index {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1e3a8a;
+  color: #dbeafe;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.plan-step-kind {
+  color: #93c5fd;
+  font-size: 10.5px;
+}
+
+.plan-step-action {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #f8fafc;
+  word-break: break-word;
+}
+
+.plan-facts {
+  margin-top: 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.plan-fact {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 10.5px;
+}
+
+.plan-fact-label {
+  color: #64748b;
+  flex: none;
+}
+
+.plan-fact code {
+  color: #cbd5e1;
+  word-break: break-all;
+}
+
+.plan-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 .card-kicker {
   font-size: 11px;
   color: #fdba74;

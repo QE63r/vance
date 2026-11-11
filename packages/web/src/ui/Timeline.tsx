@@ -1,6 +1,7 @@
 import type { State } from "../model/reduce";
 import { pendingCount } from "../model/selectors";
 import { ApprovalCard } from "./ApprovalCard";
+import { PlanCard } from "./PlanCard";
 
 const MARK: Record<string, string> = { pending: "○", running: "●", done: "✓", failed: "✗" };
 const KIND: Record<string, string> = { execute: "执行", edit: "编辑", read: "读取", fetch: "联网" };
@@ -63,6 +64,12 @@ export function Timeline({ state, now }: { state: State; now: number }) {
             const entry = state.approvals[item.requestId];
             if (!entry) return null;
             return <ApprovalCard key={item.id} entry={entry} now={now} linkReady={state.link.phase === "ready"} />;
+          }
+
+          case "plan": {
+            const entry = state.plans[item.planId];
+            if (!entry) return null;
+            return <PlanCard key={item.id} entry={entry} now={now} linkReady={state.link.phase === "ready"} />;
           }
 
           case "notice":

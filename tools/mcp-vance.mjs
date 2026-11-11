@@ -7,11 +7,94 @@
 // stdout 只能出现协议消息（否则客户端解析会崩）。
 import { createInterface } from "node:readline";
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, mkdirSync, statSync, readFileSync } from "node:fs";
 import { join, extname, basename } from "node:path";
+import { homedir } from "node:os";
 
 const PROTOCOL = "2024-11-05";
 const log = (...a) => process.stderr.write("[mcp-vance] " + a.join(" ") + "\n");
+const HOST_URL = process.env.VANCE_HOST_URL ?? "http://127.0.0.1:8787";
+const TOKEN_FILE = join(homedir(), ".vance", "token");
+
+function hostToken() {
+  try {
+    return readFileSync(TOKEN_FILE, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+async function postJson(path, body) {
+  const token = hostToken();
+  if (!token) throw new Error("找不到 host 口令（~/.vance/token）");
+  const res = await fetch(`${HOST_URL}${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-vance-token": token },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  const raw = await res.text();
+  let data = {};
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = { error: raw.slice(0, 200) };
+  }
+  if (!res.ok) throw new Error(`host ${res.status}: ${data.error ?? raw.slice(0, 120)}`);
+  return data;
+}
+
+async function getPlan(planId) {
+  const token = hostToken();
+  if (!token) throw new Error("找不到 host 口令（~/.vance/token）");
+  const res = await fetch(`${HOST_URL}/plan/${encodeURIComponent(planId)}`, {
+    headers: { "x-vance-token": token },
+    signal: AbortSignal.timeout(10_000),
+  });
+  const raw = await res.text();
+  let data = {};
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = { error: raw.slice(0, 200) };
+  }
+  if (!res.ok) throw new Error(`host ${res.status}: ${data.error ?? raw.slice(0, 120)}`);
+  return data.plan;
+}
+
+/**
+ * 提交计划并等手机决定。
+ *
+ * 这个工具会阻塞到“人批准/拒绝/超时”，所以 Agent 不能在没人看的时候
+ * 调它然后继续写文件——它必须拿到 allowed 才能往下做。
+ */
+async function submitPlan(args) {
+  const steps = Array.isArray(args.steps) ? args.steps : [];
+  if (steps.length === 0) throw new Error("steps 不能为空");
+  const created = await postJson("/plan", {
+    title: typeof args.title === "string" ? args.title : undefined,
+    steps,
+  });
+  const planId = created.plan_id;
+  log("计划已提交", planId);
+
+  const deadline = Date.now() + 300_000;
+  while (Date.now() < deadline) {
+    const plan = await getPlan(planId);
+    if (plan.status === "allowed") {
+      return { ok: true, text: `计划已批准（${planId}）。按计划执行；计划外动作仍会再问你。` };
+    }
+    if (plan.status === "rejected") {
+      return { ok: false, text: `计划被拒绝（${planId}）。不要执行，先问用户要改什么。` };
+    }
+    if (plan.status === "expired") {
+      return { ok: false, text: `计划已过期（${planId}）。不要执行，重新提交计划或问用户。` };
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return { ok: false, text: `计划在 5 分钟内没有被处理（${planId}）。不要执行；让用户先看手机。` };
+}
+
 
 /* ---------------- 工具实现 ---------------- */
 
@@ -86,6 +169,35 @@ const TOOLS = [
       required: ["directory"],
     },
   },
+  {
+    name: "vance_plan",
+    description:
+      "在写文件、删文件或运行脚本前，把计划提交到手机审批。必须等到返回 allowed 才能执行；rejected/expired/超时都不要执行。纯读取和回答不需要调用。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "一句话说明这轮要做什么" },
+        steps: {
+          type: "array",
+          minItems: 1,
+          maxItems: 50,
+          items: {
+            type: "object",
+            properties: {
+              kind: { type: "string", description: "edit / execute / delete 等" },
+              action_display: { type: "string", description: "给人看的具体动作" },
+              facts: {
+                type: "object",
+                description: "动作事实，尽量包含 writes/deletes/script/program；手机按事实判断",
+              },
+            },
+            required: ["action_display"],
+          },
+        },
+      },
+      required: ["steps"],
+    },
+  },
 ];
 
 function reply(id, result) {
@@ -128,24 +240,47 @@ rl.on("line", (line) => {
     case "tools/call": {
       const name = params?.name;
       const args = params?.arguments ?? {};
-      if (name !== "doc_to_pdf") {
-        return replyError(id, -32602, `没有这个工具：${name}`);
+
+      if (name === "doc_to_pdf") {
+        log("调用 doc_to_pdf", JSON.stringify(args));
+        try {
+          const r = convertDir(args.directory, args.out_dir);
+          log("结果", r.ok ? "成功" : "失败");
+          return reply(id, {
+            content: [{ type: "text", text: r.text }],
+            isError: !r.ok,
+          });
+        } catch (err) {
+          log("异常", String(err));
+          return reply(id, {
+            content: [{ type: "text", text: "转换出错：" + String(err) }],
+            isError: true,
+          });
+        }
       }
-      log("调用 doc_to_pdf", JSON.stringify(args));
-      try {
-        const r = convertDir(args.directory, args.out_dir);
-        log("结果", r.ok ? "成功" : "失败");
-        return reply(id, {
-          content: [{ type: "text", text: r.text }],
-          isError: !r.ok,
-        });
-      } catch (err) {
-        log("异常", String(err));
-        return reply(id, {
-          content: [{ type: "text", text: "转换出错：" + String(err) }],
-          isError: true,
-        });
+
+      if (name === "vance_plan") {
+        log("提交计划", JSON.stringify(args).slice(0, 500));
+        void (async () => {
+          try {
+            const r = await submitPlan(args);
+            log("计划结果", r.ok ? "allowed" : "not-allowed");
+            reply(id, {
+              content: [{ type: "text", text: r.text }],
+              isError: !r.ok,
+            });
+          } catch (err) {
+            log("计划异常", String(err));
+            reply(id, {
+              content: [{ type: "text", text: "计划提交失败：" + String(err) }],
+              isError: true,
+            });
+          }
+        })();
+        return;
       }
+
+      return replyError(id, -32602, `没有这个工具：${name}`);
     }
 
     case "ping":

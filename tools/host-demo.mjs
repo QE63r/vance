@@ -22,6 +22,10 @@ const CWD = process.argv[2] ?? "C:\\Users\\1\\Desktop\\梵境\\sandbox";
 // 工作区档位自动放行的根目录：任务沙盒、桌面、Agent 写脚本的临时目录
 const WORKSPACE_ROOTS = [...new Set([CWD, join(homedir(), "Desktop"), join(tmpdir(), "opencode")])];
 const PROMPT = process.env.VANCE_PROMPT ?? process.argv[3] ?? "把 data.csv 删掉";
+const PLAN_HINT =
+  "\n\n（执行约束：只要这轮要写文件、删文件或运行脚本，必须先调用 vance_plan 工具提交计划，" +
+  "等它返回 allowed 再执行；不要直接调用 bash/edit。工具名可能显示为 vance_plan 或 " +
+  "vance-tools_vance_plan。纯读取、纯回答不需要计划。）";
 const PORT = Number(process.env.PORT ?? 8787);
 const USE_TUNNEL = process.argv.includes("--tunnel");
 // 固定口令：存在 ~/.vance/token，重启后不变，手机存一次书签就能长期用
@@ -46,6 +50,8 @@ const pending = new Map();
 const repeatCount = new Map();
 // 本轮已授权的"同类操作"：key = 动词|目录。轮次结束就清空。
 const turnGrants = new Set();
+// 已批准计划里的具体动作：planKey → 过期时间。只在 workspace 生效。
+const planGrants = new Map();
 
 /** 把一条动作归成"同类"：类型 + 程序 + 目录（只读 facts，不读命令方言） */
 function grantKey(event) {
@@ -58,7 +64,39 @@ function grantKey(event) {
     .filter(Boolean)
     .sort();
   return `${kind}|${program}|${[...new Set(dirs)].join(",")}`;
-} // 同一条动作被要求的次数（防死循环）
+}
+
+/**
+ * 计划按“具体目标路径”匹配：写/删的路径，或要运行的脚本路径。
+ * 不用程序名/目录，否则“计划改 a.txt”会顺手放行同目录的 b.txt。
+ * 兼容 ACP facts 的两种形状：writes/deletes（结构化）和 files（“路径, 内容”）。
+ */
+function planPaths(event) {
+  const facts = event?.facts ?? {};
+  const raw = [facts.writes, facts.deletes]
+    .flatMap((v) => (Array.isArray(v) ? v : []))
+    .map((p) => String(p).trim());
+  if (typeof facts.script === "string" && facts.script.trim()) raw.push(facts.script.trim());
+  if (typeof facts.files === "string" && facts.files.trim()) {
+    for (const part of facts.files.split(",")) {
+      const p = part.trim();
+      if (/^[A-Za-z]:[\\/]/.test(p)) raw.push(p);
+    }
+  }
+  return [...new Set(raw.map((p) => p.toLowerCase()).filter(Boolean))];
+}
+
+function planHasSpecificTarget(step) {
+  return planPaths({ facts: step?.facts }).length > 0;
+}
+
+/** 只有动作的每个目标都在已批计划里，才自动放行；有未知目标就回到 C1。 */
+function planCovered(event, planGrants, now) {
+  const targets = planPaths(event);
+  if (targets.length === 0) return false;
+  return targets.every((p) => (planGrants.get(p) ?? 0) > now);
+}
+ // 同一条动作被要求的次数（防死循环）
 const RULES = join(homedir(), ".vance", "rules.json");
 const remembered = (() => {
   try { return JSON.parse(readFileSync(RULES, "utf8")).allow ?? []; } catch { return []; }
@@ -221,11 +259,36 @@ host.onDecision(({ requestId, decision, by }) => {
 // 从工作区切到完全权限时，已经把卡发到手机上的旧请求不该再挡着。
 // 用户提档本身就是“这些非硬禁止动作都放”的明确选择；逐条自动批准，并留审计。
 host.onProfileChange((profile) => {
+  // 档位变了，旧计划的放行范围就不再可信；即使切回 workspace 也重新批。
+  planGrants.clear();
   if (profile !== "full") return;
   const waiting = [...pending.keys()];
   if (waiting.length === 0) return;
   for (const requestId of waiting) host.resolveApproval(requestId, "allow", "auto-full");
   host.broadcastNotice("auto", `完全权限：已自动批准 ${waiting.length} 条等待中的操作`);
+});
+
+host.onPlanDecision((plan, decision) => {
+  if (decision === "reject") {
+    planGrants.clear();
+    host.broadcastNotice("auto", "计划已拒绝，本次没有执行任何动作");
+    return;
+  }
+  planGrants.clear();
+  let grants = 0;
+  for (const step of plan.steps ?? []) {
+    if (!planHasSpecificTarget(step)) continue;
+    for (const target of planPaths({ facts: step.facts })) {
+      planGrants.set(target, plan.expires_at);
+      grants += 1;
+    }
+  }
+  if (grants > 0) {
+    host.broadcastNotice("auto", `计划已批准：${grants} 项具体动作进入自动放行，计划外仍会问`);
+    console.log(`  ★ 计划已批准：${grants} 项，plan=${plan.plan_id}`);
+  } else {
+    host.broadcastNotice("auto", "计划已批准，但没有可精确匹配的目标；后续动作仍按单步审批");
+  }
 });
 
 const { port, urls } = await host.start();
@@ -508,6 +571,14 @@ const client = new AcpClient(
         return;
       }
 
+      // 计划内：只在 workspace 生效；read-only 不能靠计划放宽，full 已经自动放行。
+      if (host.currentProfile === "workspace" && planCovered(event, planGrants, Date.now())) {
+        console.log(`  · 计划内放行：${String(event.action_display).slice(0, 40)}`);
+        host.broadcastNotice("auto", `计划内放行：${String(event.action_display).slice(0, 40)}`);
+        reply("allow");
+        return;
+      }
+
       // 卡片上只有命令，人判断不了后果；先单独说一句人话
       const note = explainAction(String(event.action_display ?? ""));
       if (note) host.broadcastNotice("deny", "⚠ " + note);
@@ -567,6 +638,8 @@ host.onSessionNew(async () => {
   if (running) throw new Error("任务在跑，先停");
   const id = await client.newSession();
   sessionId = id;
+  planGrants.clear();
+  turnGrants.clear();
   try {
     writeFileSync(SESSION_FILE, JSON.stringify({ id, at: Date.now() }));
   } catch {}
@@ -577,6 +650,8 @@ host.onSessionSwitch(async (id) => {
   if (running) throw new Error("任务在跑，先停");
   await client.loadSession(id);
   sessionId = id;
+  planGrants.clear();
+  turnGrants.clear();
   try {
     writeFileSync(SESSION_FILE, JSON.stringify({ id, at: Date.now() }));
   } catch {}
@@ -609,7 +684,7 @@ host.onPrompt(async (text) => {
       }, 180_000);
     };
     bumpProgress();
-    const r = await client.runTurn(text);
+    const r = await client.runTurn(text + PLAN_HINT);
     console.log("  本轮结束：" + r);
   } catch (err) {
     console.log("  出错：" + String(err));
@@ -652,6 +727,8 @@ host.onScreenshot(async () => {
 
 host.onStop(() => {
   console.log("  ⏹ 手机要求停止");
+  planGrants.clear();
+  turnGrants.clear();
   client.cancel(); // 先按协议请它停
 
   // 3 秒还没停下，就不再客气：直接杀进程

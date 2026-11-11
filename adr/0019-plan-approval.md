@@ -1,6 +1,6 @@
 # ADR-0019：审批收敛（C：计划级审批）
 
-- 状态：**C1 + 档位优先 + C2.1 host 计划协议已落地；C2.2/C2.3 未做**（2026-11-11）
+- 状态：**C1 + 档位优先 + C2 全链路代码已落地；手机计划卡点击待真机验收**（2026-11-12）
 - 日期：2026-11-11
 - 关联：ADR-0012（权限档位）、`docs/task-approval-convergence.md`、`packages/policy`
 
@@ -32,42 +32,45 @@
 - UI 权限档位文案改成“工作区内写/脚本先问一次，本轮批准后同类放行”。
 - 测试：policy 22 条通过；原来的“直接放行”用例改成“先问”。
 
-### C2 计划内自动（C2.1 host 协议已落地）
+### C2 计划内自动（全链路代码已落地）
 
-**已实现（C2.1）：**
+**已实现：**
 
-- `POST /plan`（token）：接收 `{title?, steps[]}`，创建 `plan_<id>`；
-  每步只收 `kind / action_display / facts`，最多 50 步；返回 `plan_id / expires_at`
-- 计划归属当前活动会话；`plan_request` 推给手机，并进入流水
-- `GET /plan/:id`（token）：查询 pending/allowed/rejected/expired
-- `POST /plan/decision`（token）：`allow` / `reject`；非当前会话 409，
-  已决策 409，过期 410；发 `plan_decision`
-- 手机晚连上 / resync 会补发未决策计划；过期计划按 5 分钟 TTL 标记
-- 测试：host 47 条通过（新增 3 条协议用例）
-
-**未实现（C2.2 / C2.3）：**
-
-1. **Agent 提交计划**
+1. **host 协议（C2.1）**
+   - `POST /plan`（token）：接收 `{title?, steps[]}`，创建 `plan_<id>`；
+     每步只收 `kind / action_display / facts`，最多 50 步；返回 `plan_id / expires_at`
+   - 计划归属当前活动会话；`plan_request` 推给手机，并进入流水
+   - `GET /plan/:id`（token）：查询 pending/allowed/rejected/expired
+   - `POST /plan/decision`（token）：`allow` / `reject`；非当前会话 409，
+     已决策 409，过期 410；发 `plan_decision`
+   - 手机晚连上 / resync 会补发未决策计划；过期计划按 5 分钟 TTL 标记
+   - `full` 下提交计划自动 allowed，不把人卡在手机上
+2. **Agent 提交计划（C2.2）**
    - MCP 工具 `vance_plan`：参数 `steps[]`，每步含
      `kind / action_display / facts`（writes/deletes/script/program）
-   - 工具 POST 到 host `/plan`，带主 token；拿到 `plan_id`
-2. **host 存计划**
-   - `POST /plan`（token）：存 `{plan_id, session_id, steps, expires_at, status=pending}`
-   - 发 `plan_request` 给手机；手机显示计划卡
-   - `POST /plan/decision`：allow/reject；发 `plan_decision`
-   - `GET /plan/:id`：给 MCP 工具轮询结果（allow/reject/timeout）
-3. **手机计划卡**
-   - 列出“将要改哪些文件 / 跑哪些脚本”
-   - 按钮：拒绝 / 批准计划
-   - 批准后显示“计划内自动，计划外会再问”
+   - 工具 POST 到 host `/plan`，带主 token；轮询到 allowed/rejected/expired 才返回
+   - `AGENTS.md` + 每轮提示都要求：写/删/跑脚本前先调用；返回非 allowed 不执行
+3. **手机计划卡（C2.3）**
+   - 列出“将要改哪些文件 / 跑哪些脚本”，按钮：拒绝 / 批准计划
+   - 批准后显示“计划内自动，计划外再问”
+   - 计划待批时算进“待批”，输入框锁住，和审批卡同一套轴
 4. **计划内/外判定**
-   - host-demo 保存已批准计划的 grants
-   - `classifyApproval` 之前先查 plan grants：命中 → 自动（通知“计划内”）
-   - 未命中 → 走 C1（弹卡）
-   - 计划有有效期；换轮/停止/拒绝即失效
-5. **Agent 约束**
-   - 项目的 `AGENTS.md` 要求：任何写文件/跑脚本前先调用 `vance_plan`
-   - 没调用计划工具时，C1 仍会弹卡兜底；不会退回到“先做后说”
+   - host-demo 保存已批准计划的**具体目标路径**（不是目录、不是程序名）
+   - `classifyApproval` 先跑：硬禁止仍拒绝；`full` 自动；`read-only` 不放宽
+   - 仅 `workspace` 下，动作的**每个**目标路径都在计划里 → 自动放行
+   - 任一目标不在计划里，或 facts 拿不到目标 → 回到 C1 弹卡
+   - 计划有 5 分钟有效期；换任务/停止/拒绝清空计划 grants
+5. **验证**
+   - host 48、web 18、全量 154
+   - 真实 Agent 端到端：Agent 调 `vance_plan` → 计划卡 → 批准 → 写文件时**不再弹写入审批**
+   - 真机手机点计划卡还没人工验收（下一步）
+
+**仍未做：**
+
+- 手机真机点“批准计划/拒绝”的视觉与交互验收（代码/单测已过）
+- 计划变更后强制重新批（当前是旧计划到期/换任务失效）
+- 计划模板、多 Agent 计划合并
+- `read-only` 下的计划卡文案还可以更明确（不能放宽）
 
 ## 与权限分层的关系（2026-11-11 拍板）
 
@@ -89,7 +92,7 @@
 - 切换档位时清空**计划 grants**；记住的规则还留着，但只在 `workspace` 生效。
 
 当前 `packages/policy` 已按此顺序落地（记住的规则从 read-only 之前挪到了之后）；
-`policy` 测试 22 条。C2 的计划 grants 还要按这个表接进 host-demo。
+`policy` 测试 22 条。host-demo 的计划 grants 也按这个表接好了。
 
 ## 为什么先 C1
 
@@ -106,7 +109,6 @@ C1 让“计划外”真的会停下来，C2 才有意义。
 
 ## 没做什么
 
-- 没有实现 `vance_plan` MCP 工具、手机计划卡。
-- 没有把“计划内自动”接进 `classifyApproval` / host-demo grants。
+- 手机真机点计划卡还没人工验收；目前只做了单测/构建和真实 Agent 自动流程。
 - 没有做计划模板/计划变更重批。
 - 没有做多 Agent 的计划合并。

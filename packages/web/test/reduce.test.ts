@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canSend } from "../src/model/selectors";
+import { canSend, pendingCount } from "../src/model/selectors";
 import { initialState, reduce, type State } from "../src/model/reduce";
 import type { ApprovalEvent, ServerMsg, Step } from "../src/model/types";
 
@@ -172,6 +172,35 @@ describe("空会话", () => {
     expect(s.pendingUser).toBe("在吗");
     s = reduce(s, { type: "msg", msg: { type: "turn", state: "running" } });
     expect(s.pendingUser).toBeNull();
+  });
+
+  it("计划卡进入待批，批准后变成 allowed", () => {
+    const plan: ServerMsg = {
+      type: "plan_request",
+      plan_id: "plan_1",
+      steps: [{ kind: "edit", action_display: "写 a", facts: { writes: ["C:\\a"] } }],
+      expires_at: Date.now() + 60_000,
+    };
+    let s = run([plan]);
+    expect(s.plans["plan_1"]?.phase).toBe("offered");
+    expect(s.timeline.some((i) => i.kind === "plan")).toBe(true);
+    expect(pendingCount(s)).toBe(1);
+    expect(canSend(s)).toBe(false);
+
+    s = reduce(s, {
+      type: "msg",
+      msg: {
+        type: "plan_decision",
+        plan_id: "plan_1",
+        status: "allowed",
+        decision: "allow",
+        by: "phone",
+        at: Date.now(),
+      },
+    });
+    expect(s.plans["plan_1"]?.phase).toBe("allowed");
+    expect(pendingCount(s)).toBe(0);
+    expect(canSend(s)).toBe(true);
   });
 });
 

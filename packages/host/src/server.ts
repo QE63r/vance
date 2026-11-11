@@ -732,6 +732,14 @@ export class HostServer {
       expires_at: now + this.planTtlMs,
     };
     this.plans.set(plan.plan_id, plan);
+    if (this.profile === "full") {
+      // 完全权限本来就不问；计划工具也不该把 Agent 卡在等手机上。
+      plan.status = "allowed";
+      plan.decided_at = now;
+      plan.decided_by = "auto-full";
+      this.emit(this.planDecisionPayload(plan, "auto-full"));
+      return plan;
+    }
     this.pendingPlans.set(plan.plan_id, plan);
     this.emit(this.planRequestPayload(plan));
     return plan;

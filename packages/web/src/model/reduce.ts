@@ -16,6 +16,7 @@ import type {
   ArtifactsPayload,
   Decision,
   DeviceRequest,
+  PlanRequest,
   Profile,
   ServerMsg,
   Step,
@@ -36,11 +37,20 @@ export interface ApprovalEntry {
   error?: string;
 }
 
+export type PlanPhase = "offered" | "submitting" | "allowed" | "rejected" | "expired";
+
+export interface PlanEntry {
+  event: PlanRequest;
+  phase: PlanPhase;
+  error?: string;
+}
+
 export type TimelineItem =
   | { id: string; kind: "user"; at: number; text: string }
   | { id: string; kind: "agent"; at: number; text: string; streaming: boolean }
   | { id: string; kind: "step"; at: number; step: Step }
   | { id: string; kind: "approval"; at: number; requestId: string }
+  | { id: string; kind: "plan"; at: number; planId: string }
   | { id: string; kind: "notice"; at: number; level: "deny" | "auto" | "info"; text: string }
   | { id: string; kind: "artifacts"; at: number; data: ArtifactsPayload }
   | { id: string; kind: "image"; at: number; dataUrl: string };
@@ -50,6 +60,7 @@ export interface State {
   device: { phase: DevicePhase; name: string; incoming: DeviceRequest[] };
   exec: { phase: ExecPhase; detail?: string; lastAt?: number };
   approvals: Record<string, ApprovalEntry>;
+  plans: Record<string, PlanEntry>;
   timeline: TimelineItem[];
   project: string;
   task: string;
@@ -69,6 +80,7 @@ export const initialState: State = {
   device: { phase: "unknown", name: "", incoming: [] },
   exec: { phase: "unknown" },
   approvals: {},
+  plans: {},
   timeline: [],
   project: "",
   task: "",
@@ -90,6 +102,8 @@ export type Action =
   | { type: "decide"; requestId: string; decision: Decision }
   | { type: "decide-timeout"; requestId: string }
   | { type: "localProfile"; profile: Profile }
+  | { type: "plan-decide"; planId: string; decision: "allow" | "reject" }
+  | { type: "plan-error"; planId: string; error: string }
   | { type: "device-decided"; deviceId: string };
 
 const MAX_ITEMS = 400;
@@ -207,12 +221,39 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         exec: s.exec.phase === "unknown" ? { phase: "idle" } : s.exec,
       };
 
+    case "plan_request": {
+      let next = s;
+      if (!next.plans[msg.plan_id]) {
+        next = {
+          ...next,
+          plans: { ...next.plans, [msg.plan_id]: { event: msg, phase: "offered" } },
+        };
+      }
+      if (!next.timeline.some((i) => i.kind === "plan" && i.planId === msg.plan_id)) {
+        const [id, seq] = nextId(next, "plan");
+        next = { ...next, seq };
+        next = append(next, { id, kind: "plan", at: msg.created_at ?? at, planId: msg.plan_id });
+      }
+      return next;
+    }
+
+    case "plan_decision": {
+      const existing = s.plans[msg.plan_id];
+      if (!existing) return s;
+      const phase: PlanPhase =
+        msg.status === "allowed" ? "allowed" : msg.status === "rejected" ? "rejected" : "expired";
+      const next = { ...existing, phase };
+      delete next.error;
+      return { ...s, plans: { ...s.plans, [msg.plan_id]: next } };
+    }
+
     case "history": {
       // 回放：清空后重放，避免两份流水叠在一起
       let next: State = {
         ...s,
         timeline: [],
         approvals: {},
+        plans: {},
         exec: { phase: "unknown" },
         lastEventAt: null,
         replaying: true,
@@ -309,6 +350,7 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         sessionId: msg.session_id,
         timeline: [],
         approvals: {},
+        plans: {},
         exec: { phase: "unknown" },
         lastEventAt: null,
       };
@@ -352,11 +394,37 @@ export function reduce(s: State, action: Action): State {
     case "localProfile":
       return { ...s, profile: action.profile };
 
+    case "plan-decide": {
+      const entry = s.plans[action.planId];
+      if (!entry || entry.phase !== "offered") return s;
+      const next = { ...entry, phase: "submitting" as const };
+      delete next.error;
+      return { ...s, plans: { ...s.plans, [action.planId]: next } };
+    }
+
+    case "plan-error": {
+      const entry = s.plans[action.planId];
+      if (!entry) return s;
+      return {
+        ...s,
+        plans: { ...s.plans, [action.planId]: { ...entry, phase: "offered", error: action.error } },
+      };
+    }
+
     case "tick": {
       const now = action.now;
-      return mapApprovals(s, (a) =>
+      const withApprovals = mapApprovals(s, (a) =>
         a.phase === "offered" && a.event.expires_at > 0 && a.event.expires_at <= now ? { ...a, phase: "expired" } : a,
       );
+      let plansChanged = false;
+      const plans = { ...withApprovals.plans };
+      for (const [id, entry] of Object.entries(plans)) {
+        if (entry.phase === "offered" && entry.event.expires_at > 0 && entry.event.expires_at <= now) {
+          plans[id] = { ...entry, phase: "expired" };
+          plansChanged = true;
+        }
+      }
+      return plansChanged ? { ...withApprovals, plans } : withApprovals;
     }
 
     case "decide":

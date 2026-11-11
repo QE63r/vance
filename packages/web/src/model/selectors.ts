@@ -1,11 +1,15 @@
-import type { ApprovalEntry, State } from "./reduce";
+import type { ApprovalEntry, PlanEntry, State } from "./reduce";
 
 export function pendingApprovals(s: State): ApprovalEntry[] {
   return Object.values(s.approvals).filter((a) => a.phase === "offered" || a.phase === "submitting");
 }
 
+export function pendingPlans(s: State): PlanEntry[] {
+  return Object.values(s.plans).filter((p) => p.phase === "offered" || p.phase === "submitting");
+}
+
 export function pendingCount(s: State): number {
-  return pendingApprovals(s).length;
+  return pendingApprovals(s).length + pendingPlans(s).length;
 }
 
 export function linkReady(s: State): boolean {

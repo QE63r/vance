@@ -82,11 +82,38 @@ export interface DeviceRequest {
   at: number;
 }
 
+export interface PlanStep {
+  kind?: string;
+  action_display: string;
+  facts?: Record<string, unknown>;
+}
+
+export interface PlanRequest {
+  type: "plan_request";
+  plan_id: string;
+  session_id?: string;
+  title?: string;
+  steps: PlanStep[];
+  created_at?: number;
+  expires_at: number;
+}
+
+export interface PlanDecision {
+  type: "plan_decision";
+  plan_id: string;
+  status: "allowed" | "rejected" | "expired";
+  decision: "allow" | "reject";
+  by: string;
+  at: number;
+}
+
 /** host → 手机 */
 export type ServerMsg =
   | { type: "hello"; project: string; task?: string; device: string; session_id?: string; server_time?: number; profile?: Profile }
   | { type: "history"; items: ServerMsg[]; session_id?: string }
   | { type: "event"; event: AgentEvent }
+  | PlanRequest
+  | PlanDecision
   | { type: "chat"; role: "agent"; messageId: string; text: string }
   | { type: "user"; text: string }
   | { type: "turn"; state: "running" | "idle" | "stopped" }

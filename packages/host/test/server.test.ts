@@ -780,6 +780,27 @@ describe("计划级审批协议", () => {
     ws.close();
   });
 
+  it("full 下计划直接通过，不把人卡在手机上", async () => {
+    server = makeServer({ port: 0, token: "plan4", pagePath: PAGE, approveAllDevices: true });
+    server.useSession("ses_plan4", "完全权限计划");
+    const { port } = await server.start();
+    server.setProfile("full", "test");
+
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "plan4" },
+      body: JSON.stringify({ steps: [{ action_display: "写 c", facts: { writes: ["C:\\c"] } }] }),
+    });
+    expect(created.status).toBe(200);
+    const planId = ((await created.json()) as any).plan_id;
+    const got = await fetch(`http://127.0.0.1:${port}/plan/${planId}`, {
+      headers: { "x-vance-token": "plan4" },
+    });
+    const body = (await got.json()) as any;
+    expect(body.plan.status).toBe("allowed");
+    expect(body.plan.decided_by).toBe("auto-full");
+  });
+
   it("拒绝、重复决策、坏 body 和未鉴权都有明确结果", async () => {
     server = makeServer({ port: 0, token: "plan2", pagePath: PAGE, approveAllDevices: true });
     server.useSession("ses_plan2", "计划任务");
