@@ -106,9 +106,13 @@ export function App() {
         headers: { "content-type": "application/json", "x-vance-token": getToken() },
         body: JSON.stringify({ profile }),
       });
-      if (res.ok) setSheet(null);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // POST 成功就先更新本机；服务端的 profile 事件随后还会再来一次。
+      // 不能只等广播：连接抖一下，用户就会觉得“点不动”。
+      store.dispatch({ type: "localProfile", profile });
+      setSheet(null);
     } catch {
-      /* 网络失败就留在面板里，重试 */
+      window.alert("权限切换失败：网络或口令问题。刷新页面后重试。");
     }
   };
 
@@ -149,7 +153,14 @@ export function App() {
           <span className={`chip exec-${s.exec.phase}`}>{execText(s)}</span>
           <span className={`chip appr-${pending > 0 ? "on" : "off"}`}>{pending > 0 ? `待批 ${pending}` : "无待批"}</span>
           <span className={`chip dev-${s.device.phase}`}>{deviceText(s)}</span>
-          <span className={`chip prof-${s.profile}`}>权限：{PROFILE_TEXT[s.profile]}</span>
+          <button
+            className={`chip prof-${s.profile}`}
+            type="button"
+            onClick={() => setSheet("profile")}
+            aria-label="切换权限档位"
+          >
+            权限：{PROFILE_TEXT[s.profile]}
+          </button>
         </div>
       </header>
 

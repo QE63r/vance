@@ -145,6 +145,11 @@ button:disabled {
   white-space: nowrap;
 }
 
+button.chip {
+  font-family: inherit;
+  cursor: pointer;
+}
+
 .exec-running {
   color: #bfdbfe;
   border-color: #1d4ed8;

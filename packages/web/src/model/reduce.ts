@@ -89,6 +89,7 @@ export type Action =
   | { type: "localUser"; text: string; at: number }
   | { type: "decide"; requestId: string; decision: Decision }
   | { type: "decide-timeout"; requestId: string }
+  | { type: "localProfile"; profile: Profile }
   | { type: "device-decided"; deviceId: string };
 
 const MAX_ITEMS = 400;
@@ -347,6 +348,9 @@ export function reduce(s: State, action: Action): State {
 
     case "msg":
       return applyMsg(s, action.msg, Date.now());
+
+    case "localProfile":
+      return { ...s, profile: action.profile };
 
     case "tick": {
       const now = action.now;
