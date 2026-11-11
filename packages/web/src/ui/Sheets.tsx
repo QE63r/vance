@@ -264,7 +264,7 @@ export function MenuSheet({
 
 const PROFILE_ROWS: Array<[Profile, string, string]> = [
   ["read-only", "只读", "只看不写：任何改动都要问"],
-  ["workspace", "工作区（默认）", "桌面、sandbox 内的写和脚本直接放行"],
+  ["workspace", "工作区（默认）", "工作区内写/脚本先问一次，本轮批准后同类放行"],
   ["full", "完全权限", "当前任务内除硬禁止外全部放行"],
 ];
 

@@ -63,8 +63,8 @@ describe("权限档位", () => {
     facts: { kind: "execute", effect: "unknown", script: path },
   });
 
-  it("工作区：桌面内的写直接放行", () => {
-    expect(classifyApproval(edit("C:\\Users\\1\\Desktop\\a.docx"), { profile: "workspace", workspaceRoots: roots }).auto).toBe(true);
+  it("工作区：桌面内的写先问一次", () => {
+    expect(classifyApproval(edit("C:\\Users\\1\\Desktop\\a.docx"), { profile: "workspace", workspaceRoots: roots }).auto).toBe(false);
   });
 
   it("工作区：写系统目录仍然禁止", () => {
@@ -72,8 +72,8 @@ describe("权限档位", () => {
     expect(v.deny).toBe(true);
   });
 
-  it("工作区：运行工作区内的脚本放行", () => {
-    expect(classifyApproval(runScript("C:\\Users\\1\\Desktop\\梵境\\sandbox\\build.ps1"), { profile: "workspace", workspaceRoots: roots }).auto).toBe(true);
+  it("工作区：运行工作区内的脚本先问一次", () => {
+    expect(classifyApproval(runScript("C:\\Users\\1\\Desktop\\梵境\\sandbox\\build.ps1"), { profile: "workspace", workspaceRoots: roots }).auto).toBe(false);
   });
 
   it("只读：桌面写也要问", () => {

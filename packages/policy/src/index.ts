@@ -144,7 +144,8 @@ export function classifyApproval(
   const effect = factString(facts, "effect", "unknown");
   if (profile === "read-only") return readOnlyVerdict(event);
 
-  // workspace：只放行工作区内的写/删/改，以及运行工作区内的脚本
+  // workspace：读自动；工作区内的写/删/脚本先问一次。
+  // “本轮同类放行”由启动器在批准后处理，不在策略层偷偷放。
   const kind = factString(facts, "kind", "unknown");
   if (effect === "read") return ALLOW("只读操作");
   if (kind === "read" || kind === "other") return ALLOW("读取路径");
@@ -155,13 +156,13 @@ export function classifyApproval(
 
   if (targets.length > 0) {
     if (roots.length > 0 && targets.every((p) => insideWorkspace(p, roots))) {
-      return ALLOW("工作区内操作");
+      return ASK("工作区内写操作，先确认");
     }
     return ASK("工作区外的写操作");
   }
 
   if (script && roots.length > 0 && insideWorkspace(script, roots)) {
-    return ALLOW("运行工作区内的脚本");
+    return ASK("运行工作区内的脚本，先确认");
   }
 
   return ASK(effect === "unknown" ? `类型 ${kind} 的影响未知，需要人工确认` : `类型 ${kind} 需要人工确认`);
