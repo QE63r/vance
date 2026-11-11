@@ -9,6 +9,7 @@ let socket: WebSocket | null = null;
 let retryTimer: number | null = null;
 
 let currentToken = "";
+let hasConnected = false;
 
 /** 给 HTTP 接口用（/profile 等）：token 只放请求头，不进 URL */
 export function getToken(): string {
@@ -61,6 +62,10 @@ export function boot(creds: Credentials): void {
 
     ws.onopen = () => {
       store.dispatch({ type: "open" });
+      // 重连后主动 resync：host 的 attach 会补 hello/history/pending，
+      // 但先到的 pending 可能在页面状态重置时丢掉；再要一次最稳。
+      if (hasConnected) ws.send(JSON.stringify({ type: "resync" }));
+      hasConnected = true;
     };
 
     ws.onmessage = (ev: MessageEvent) => {
