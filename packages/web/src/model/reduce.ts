@@ -104,6 +104,14 @@ function append(s: State, item: TimelineItem): State {
   return { ...s, timeline };
 }
 
+/** 已批准/失效后，之前“没收到回执”的旧错误不能留在卡上 */
+function clearApprovalError(a: ApprovalEntry): ApprovalEntry {
+  if (!a.error) return a;
+  const next = { ...a };
+  delete next.error;
+  return next;
+}
+
 function mapApprovals(s: State, fn: (a: ApprovalEntry) => ApprovalEntry): State {
   const entries = Object.entries(s.approvals);
   let changed = false;
@@ -255,20 +263,20 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
     }
 
     case "ack":
-      return mapApprovals(s, (a) =>
-        a.event.request_id !== msg.requestId
-          ? a
-          : msg.accepted
+      return mapApprovals(s, (a) => {
+        if (a.event.request_id !== msg.requestId) return a;
+        return clearApprovalError(
+          msg.accepted
             ? { ...a, phase: "resolved", at }
             : { ...a, phase: "stale", at },
-      );
+        );
+      });
 
     case "decision":
-      return mapApprovals(s, (a) =>
-        a.event.request_id !== msg.requestId || a.phase === "resolved" || a.phase === "stale"
-          ? a
-          : { ...a, phase: "resolved", by: msg.by, decision: msg.decision, at: msg.at },
-      );
+      return mapApprovals(s, (a) => {
+        if (a.event.request_id !== msg.requestId || a.phase === "resolved" || a.phase === "stale") return a;
+        return clearApprovalError({ ...a, phase: "resolved", by: msg.by, decision: msg.decision, at: msg.at });
+      });
 
     case "device_request":
       if (s.device.incoming.some((d) => d.deviceId === msg.deviceId)) return s;
@@ -355,10 +363,10 @@ export function reduce(s: State, action: Action): State {
       });
 
     case "decide-timeout":
-      // 电脑没回执：退回"可操作"，让人重试，而不是一直转圈
+      // 电脑没回执：先 resync 核对；动作可能已经执行，不要吓用户重复批准
       return mapApprovals(s, (a) =>
         a.event.request_id === action.requestId && a.phase === "submitting"
-          ? { ...a, phase: "offered", error: "没收到电脑回执，请重试" }
+          ? { ...a, phase: "offered", error: "没收到电脑回执，正在核对…" }
           : a,
       );
 

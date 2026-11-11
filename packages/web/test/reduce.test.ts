@@ -155,6 +155,20 @@ describe("空会话", () => {
     expect(s.timeline).toHaveLength(0);
   });
 
+  it("审批成功后清掉旧的回执错误", () => {
+    let s = run([{ type: "event", event: approval }]);
+    s = reduce(s, { type: "decide", requestId: approval.request_id, decision: "allow" });
+    s = reduce(s, { type: "decide-timeout", requestId: approval.request_id });
+    expect(s.approvals[approval.request_id].error).toBeTruthy();
+    s = reduce(s, {
+      type: "msg",
+      msg: { type: "decision", requestId: approval.request_id, decision: "allow", by: "phone", at: Date.now() },
+    });
+    expect(s.approvals[approval.request_id].error).toBeUndefined();
+  });
+});
+
+describe("本地回显", () => {
   it("本地先画的那句，服务端回显只确认、不重复", () => {
     let s = reduce(initialState, { type: "localUser", text: "贪吃蛇吧", at: 1 });
     s = reduce(s, { type: "msg", msg: { type: "user", text: "贪吃蛇吧" } });
