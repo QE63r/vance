@@ -25,10 +25,12 @@ export function ApprovalCard({ entry, now, linkReady }: { entry: ApprovalEntry; 
     if (sent) store.dispatch({ type: "decide", requestId: ev.request_id, decision: remember ? "remember" : decision });
   };
 
-  // 提交后 8 秒没有回执就退回可操作，不能让卡片永远转圈
+  // 提交后 8 秒没有回执：先主动 resync 核对，再退回可操作。
+  // Funnel/手机重连时 ack 可能丢，但决定其实已经落库；不能让用户误以为失败。
   useEffect(() => {
     if (entry.phase !== "submitting") return;
     const timer = window.setTimeout(() => {
+      send({ type: "resync" });
       store.dispatch({ type: "decide-timeout", requestId: ev.request_id });
     }, 8000);
     return () => window.clearTimeout(timer);
