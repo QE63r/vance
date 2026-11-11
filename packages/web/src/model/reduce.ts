@@ -243,7 +243,8 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
 
     case "turn": {
       const phase: ExecPhase = msg.state === "running" ? "running" : msg.state === "stopped" ? "stopped" : "idle";
-      const next = { ...s, exec: { phase, lastAt: at }, lastEventAt: at };
+      // 服务端已经接单（无论 running 还是已经结束）：本地“等待确认”必须收掉。
+      const next = { ...s, exec: { phase, lastAt: at }, lastEventAt: at, pendingUser: null };
       return msg.state === "running" ? next : sealStreaming(next);
     }
 

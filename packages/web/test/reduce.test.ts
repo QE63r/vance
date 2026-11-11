@@ -166,6 +166,13 @@ describe("空会话", () => {
     });
     expect(s.approvals[approval.request_id].error).toBeUndefined();
   });
+
+  it("服务端接单后立刻清掉等待确认", () => {
+    let s = reduce(initialState, { type: "localUser", text: "在吗", at: 1 });
+    expect(s.pendingUser).toBe("在吗");
+    s = reduce(s, { type: "msg", msg: { type: "turn", state: "running" } });
+    expect(s.pendingUser).toBeNull();
+  });
 });
 
 describe("本地回显", () => {

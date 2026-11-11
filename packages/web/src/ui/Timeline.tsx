@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import type { State } from "../model/reduce";
 import { pendingCount } from "../model/selectors";
+import { send } from "../net/ws";
 import { ApprovalCard } from "./ApprovalCard";
 
 const MARK: Record<string, string> = { pending: "○", running: "●", done: "✓", failed: "✗" };
@@ -15,6 +17,13 @@ function shortPath(p: string): string {
 }
 
 export function Timeline({ state, now }: { state: State; now: number }) {
+  // 发出去 5 秒还没收到任何服务端事件：主动核对一次，别让“已发送”永远挂着。
+  useEffect(() => {
+    if (state.pendingUser === null) return;
+    const timer = window.setTimeout(() => send({ type: "resync" }), 5000);
+    return () => window.clearTimeout(timer);
+  }, [state.pendingUser]);
+
   if (state.timeline.length === 0) {
     return (
       <div className="empty">
@@ -99,7 +108,13 @@ export function Timeline({ state, now }: { state: State; now: number }) {
             );
         }
       })}
-      {state.pendingUser !== null && <div className="send-ack">已发送，等待电脑确认…</div>}
+      {state.pendingUser !== null && !waitingForAgent && (
+        <div className="send-ack">
+          {state.lastEventAt && now - state.lastEventAt > 5000
+            ? "已发送，正在核对…"
+            : "已发送 · 正在联系电脑…"}
+        </div>
+      )}
       {waitingForAgent && (
         <div className="typing" aria-label="Agent 正在处理">
           <span className="typing-dot" />
