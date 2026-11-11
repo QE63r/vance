@@ -1158,13 +1158,9 @@ export class HostServer {
         socket,
         approved: firstEver,
       };
-      // 同一台设备重连：旧 socket 可能还挂着；先关掉，否则 attached 会挡掉 hello。
-      const previous = device.socket;
-      if (previous && previous !== socket) {
-        try {
-          previous.close(4000, "replaced");
-        } catch {}
-      }
+      // 同一台设备可能同时开着两个页面（Chrome 快捷方式 + 标签页）。
+      // 不要互相踢：旧 socket 留着一起收广播，否则两个页面会无限重连，
+      // 看起来“已连接”，但消息只在另一个页面更新，必须刷新才看到。
       device.socket = socket;
       device.attached = false;
       device.ip = ip;

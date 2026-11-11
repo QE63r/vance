@@ -688,6 +688,27 @@ describe("权限档位（host）", () => {
   });
 });
 
+describe("同一台设备的多个页面", () => {
+  it("两个页面都能收到广播，不会互相踢下线", async () => {
+    const s = makeServer({ port: 0, token: "dup1", pagePath: PAGE, approveAllDevices: true });
+    server = s;
+    s.useSession("ses_dup", "重复页面");
+    const { port } = await s.start();
+
+    const ws1 = new WebSocket(`ws://127.0.0.1:${port}/ws?token=dup1&device=dup-device`);
+    await waitForMessage(ws1, (m) => m.type === "hello");
+    const ws2 = new WebSocket(`ws://127.0.0.1:${port}/ws?token=dup1&device=dup-device`);
+    await waitForMessage(ws2, (m) => m.type === "hello");
+
+    const a = waitForMessage(ws1, (m) => m.type === "notice" && m.text === "both");
+    const b = waitForMessage(ws2, (m) => m.type === "notice" && m.text === "both");
+    s.broadcastNotice("auto", "both");
+    await Promise.all([a, b]);
+    ws1.close();
+    ws2.close();
+  });
+});
+
 describe("任务生命周期（session/new 与 session/switch）", () => {
   it("手机能新建任务，也能真正切回旧任务", async () => {
     const s = makeServer({ port: 0, token: "life1", pagePath: PAGE, approveAllDevices: true });
