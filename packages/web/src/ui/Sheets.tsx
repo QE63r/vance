@@ -265,7 +265,7 @@ export function MenuSheet({
 const PROFILE_ROWS: Array<[Profile, string, string]> = [
   ["read-only", "只读", "只看不写：任何改动都要问"],
   ["workspace", "工作区（默认）", "工作区内写/脚本先问一次，本轮批准后同类放行"],
-  ["full", "完全权限", "当前任务内除硬禁止外全部放行"],
+  ["full", "完全权限", "除硬禁止外全部放行，直到你手动切回"],
 ];
 
 export function ProfileSheet({
@@ -291,7 +291,7 @@ export function ProfileSheet({
         </button>
       ))}
       <div className="sheet-note">
-        硬禁止（系统目录、凭据、磁盘级操作）任何档位都不放；完全权限只对当前任务有效。
+        硬禁止（系统目录、凭据、磁盘级操作）任何档位都不放；完全权限会一直有效，直到你手动切回。
       </div>
     </Sheet>
   );
