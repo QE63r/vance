@@ -13,6 +13,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSy
 import { homedir, tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = dirname(HERE);
 const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
 // 真前端的构建产物：默认用仓库里的 packages/web/dist，可用 VANCE_WEB_DIR 指到别处
 const WEB_DIR = process.env.VANCE_WEB_DIR ?? join(HERE, "..", "packages", "web", "dist");
@@ -79,6 +80,8 @@ function snapshot(root, maxDepth = 3) {
     for (const e of entries) {
       const p = join(dir, e.name);
       if (e.isDirectory()) {
+        // 控制面仓库本身不是 Agent 的产出；我们改文档/代码时不能算进交付物。
+        if (p.toLowerCase() === REPO_ROOT.toLowerCase()) continue;
         if (/^(node_modules|\.git|\.vance)$/i.test(e.name)) continue;
         walk(p, depth + 1);
       } else {
