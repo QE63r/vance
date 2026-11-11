@@ -237,6 +237,52 @@ button:disabled {
   border-bottom-left-radius: 5px;
 }
 
+.send-ack {
+  align-self: flex-end;
+  color: #64748b;
+  font-size: 10px;
+  padding-right: 4px;
+}
+
+.typing {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid #1d2937;
+  border-radius: 14px;
+  border-bottom-left-radius: 5px;
+  background: #121a24;
+}
+
+.typing-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #64748b;
+  animation: typing-blink 1.2s infinite ease-in-out;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.typing-text {
+  color: #64748b;
+  font-size: 10px;
+  margin-left: 3px;
+}
+
+@keyframes typing-blink {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-1px); }
+}
+
 .caret {
   display: inline-block;
   width: 6px;

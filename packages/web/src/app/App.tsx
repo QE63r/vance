@@ -43,7 +43,7 @@ export function App() {
     if (!el) return;
     if (!stick.current && lastItem?.kind !== "user") return;
     el.scrollTop = el.scrollHeight;
-  }, [s.timeline.length, s.approvals, lastItem?.id, streamLen, lastItem?.kind]);
+  }, [s.timeline.length, s.approvals, lastItem?.id, streamLen, lastItem?.kind, s.exec.phase, s.pendingUser]);
 
   const pending = pendingCount(s);
   const artifacts = latestArtifacts(s);

@@ -1,4 +1,5 @@
 import type { State } from "../model/reduce";
+import { pendingCount } from "../model/selectors";
 import { ApprovalCard } from "./ApprovalCard";
 
 const MARK: Record<string, string> = { pending: "○", running: "●", done: "✓", failed: "✗" };
@@ -22,6 +23,10 @@ export function Timeline({ state, now }: { state: State; now: number }) {
       </div>
     );
   }
+
+  const last = state.timeline[state.timeline.length - 1];
+  const waitingForAgent =
+    state.exec.phase === "running" && pendingCount(state) === 0 && last?.kind !== "agent";
 
   return (
     <div className="timeline">
@@ -94,6 +99,15 @@ export function Timeline({ state, now }: { state: State; now: number }) {
             );
         }
       })}
+      {state.pendingUser !== null && <div className="send-ack">已发送，等待电脑确认…</div>}
+      {waitingForAgent && (
+        <div className="typing" aria-label="Agent 正在处理">
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="typing-dot" />
+          <span className="typing-text">Agent 正在处理…</span>
+        </div>
+      )}
     </div>
   );
 }
