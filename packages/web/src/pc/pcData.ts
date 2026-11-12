@@ -47,6 +47,7 @@ export interface PcSnapshot {
   hostLabel: string;
   port: string;
   devicesOnline: number;
+  trusted: number;
   phone: { name: string; connected: boolean; lastSeen: string } | null;
   apps: PcAppInfo[];
   recent: PcRecent[];
@@ -197,6 +198,7 @@ export function usePcSnapshot(): { snapshot: PcSnapshot; refresh: () => void } {
       hostLabel: demo ? "DESKTOP-8F2A" : status?.host.name || window.location.hostname || "本机",
       port: demo ? "8787" : String(status?.host.port ?? window.location.port ?? "8787"),
       devicesOnline: devices,
+      trusted: demo ? 1 : status?.trusted ?? 0,
       phone:
         devices > 0
           ? {
