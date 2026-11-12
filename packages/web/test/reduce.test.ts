@@ -204,6 +204,90 @@ describe("空会话", () => {
   });
 });
 
+describe("移动计划的撤销", () => {
+  const movePlan: ServerMsg = {
+    type: "plan_request",
+    plan_id: "plan_move",
+    moves: [{ from: "C:\\tmp\\a.txt", to: "C:\\tmp\\b.txt" }],
+    steps: [
+      {
+        kind: "execute",
+        action_display: "移动 a.txt → b.txt",
+        facts: { moves: [{ from: "C:\\tmp\\a.txt", to: "C:\\tmp\\b.txt" }] },
+      },
+    ],
+    expires_at: Date.now() + 60_000,
+  };
+
+  function allowedPlan(): State {
+    let s = run([movePlan]);
+    s = reduce(s, {
+      type: "msg",
+      msg: {
+        type: "plan_decision",
+        plan_id: "plan_move",
+        status: "allowed",
+        decision: "allow",
+        by: "phone",
+        at: Date.now(),
+      },
+    });
+    return s;
+  }
+
+  it("撤销中 → 已撤销；完成后再点不会重来", () => {
+    let s = allowedPlan();
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("running");
+
+    s = reduce(s, { type: "undo-result", planId: "plan_move", moved: 1, failed: [] });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("done");
+    expect(s.plans["plan_move"]?.undo?.moved).toBe(1);
+
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("done");
+  });
+
+  it("部分失败保留原因，并允许重试", () => {
+    let s = allowedPlan();
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    s = reduce(s, {
+      type: "undo-result",
+      planId: "plan_move",
+      moved: 1,
+      failed: [{ from: "C:\\tmp\\a.txt", to: "C:\\tmp\\b.txt", reason: "target-missing" }],
+    });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("partial");
+    expect(s.plans["plan_move"]?.undo?.failed[0]?.reason).toBe("target-missing");
+
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("running");
+  });
+
+  it("接口报错算失败，可以重试", () => {
+    let s = allowedPlan();
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    s = reduce(s, {
+      type: "undo-result",
+      planId: "plan_move",
+      moved: 0,
+      failed: [],
+      error: "撤销失败：HTTP 500",
+    });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("failed");
+    expect(s.plans["plan_move"]?.undo?.error).toContain("HTTP 500");
+
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    expect(s.plans["plan_move"]?.undo?.phase).toBe("running");
+  });
+
+  it("还没批准的计划不能撤销", () => {
+    let s = run([movePlan]);
+    s = reduce(s, { type: "undo-plan", planId: "plan_move" });
+    expect(s.plans["plan_move"]?.undo).toBeUndefined();
+  });
+});
+
 describe("本地回显", () => {
   it("本地先画的那句，服务端回显只确认、不重复", () => {
     let s = reduce(initialState, { type: "localUser", text: "贪吃蛇吧", at: 1 });

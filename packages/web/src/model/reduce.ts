@@ -39,10 +39,21 @@ export interface ApprovalEntry {
 
 export type PlanPhase = "offered" | "submitting" | "allowed" | "rejected" | "expired";
 
+export type UndoPhase = "running" | "done" | "partial" | "failed";
+
+/** 移动计划的撤销：只对有撤销清单的（已批准）计划；失败可重试 */
+export interface PlanUndo {
+  phase: UndoPhase;
+  moved: number;
+  failed: Array<{ from: string; to: string; reason: string }>;
+  error?: string;
+}
+
 export interface PlanEntry {
   event: PlanRequest;
   phase: PlanPhase;
   error?: string;
+  undo?: PlanUndo;
 }
 
 export type TimelineItem =
@@ -104,6 +115,14 @@ export type Action =
   | { type: "localProfile"; profile: Profile }
   | { type: "plan-decide"; planId: string; decision: "allow" | "reject" }
   | { type: "plan-error"; planId: string; error: string }
+  | { type: "undo-plan"; planId: string }
+  | {
+      type: "undo-result";
+      planId: string;
+      moved: number;
+      failed: Array<{ from: string; to: string; reason: string }>;
+      error?: string;
+    }
   | { type: "device-decided"; deviceId: string };
 
 const MAX_ITEMS = 400;
@@ -409,6 +428,40 @@ export function reduce(s: State, action: Action): State {
         ...s,
         plans: { ...s.plans, [action.planId]: { ...entry, phase: "offered", error: action.error } },
       };
+    }
+
+    case "undo-plan": {
+      const entry = s.plans[action.planId];
+      // 只有已批准的计划才可能有撤销清单；撤销完成/进行中都不再发第二次
+      if (!entry || entry.phase !== "allowed") return s;
+      if (entry.undo?.phase === "running" || entry.undo?.phase === "done") return s;
+      return {
+        ...s,
+        plans: {
+          ...s.plans,
+          [action.planId]: { ...entry, undo: { phase: "running", moved: 0, failed: [] } },
+        },
+      };
+    }
+
+    case "undo-result": {
+      const entry = s.plans[action.planId];
+      if (!entry) return s;
+      // 一个都没成功（或接口报错）算 failed；成功一部分算 partial；全成功才是 done
+      const phase: UndoPhase = action.error
+        ? "failed"
+        : action.failed.length === 0
+          ? "done"
+          : action.moved > 0
+            ? "partial"
+            : "failed";
+      const undo: PlanUndo = {
+        phase,
+        moved: action.moved,
+        failed: action.failed,
+        ...(action.error ? { error: action.error } : {}),
+      };
+      return { ...s, plans: { ...s.plans, [action.planId]: { ...entry, undo } } };
     }
 
     case "tick": {

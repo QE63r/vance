@@ -1,4 +1,5 @@
 import type { PlanEntry } from "../model/reduce";
+import type { PlanMove } from "../model/types";
 import { store } from "../model/store";
 import { getToken } from "../net/ws";
 
@@ -17,6 +18,34 @@ function mmss(seconds: number): string {
 
 function asStrings(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String) : [];
+}
+
+/** 优先用 host 汇总的 moves；没有就回到 steps[].facts.moves（兼容旧事件） */
+function planMoves(plan: PlanEntry["event"]): PlanMove[] {
+  if (Array.isArray(plan.moves) && plan.moves.length > 0) {
+    return plan.moves
+      .filter((m) => m && typeof m.from === "string" && typeof m.to === "string" && m.from && m.to)
+      .map((m) => ({ from: m.from, to: m.to }));
+  }
+  const out: PlanMove[] = [];
+  for (const step of plan.steps) {
+    const raw = step.facts?.moves;
+    if (!Array.isArray(raw)) continue;
+    for (const item of raw) {
+      if (!item || typeof item !== "object") continue;
+      const m = item as { from?: unknown; to?: unknown };
+      const from = String(m.from ?? "");
+      const to = String(m.to ?? "");
+      if (from && to) out.push({ from, to });
+    }
+  }
+  return out;
+}
+
+function reasonText(reason: string): string {
+  if (reason === "target-missing") return "目标文件不在了";
+  if (reason === "source-exists") return "原位置已有同名文件";
+  return reason || "未知原因";
 }
 
 function StepFacts({ facts }: { facts?: Record<string, unknown> }) {
@@ -58,6 +87,9 @@ export function PlanCard({ entry, now, linkReady }: { entry: PlanEntry; now: num
   const plan = entry.event;
   const remaining = Math.max(0, Math.ceil((plan.expires_at - now) / 1000));
   const open = entry.phase === "offered" || entry.phase === "submitting";
+  const moves = planMoves(plan);
+  const undo = entry.undo;
+  const canUndo = entry.phase === "allowed" && moves.length > 0;
 
   const decide = async (decision: "allow" | "reject") => {
     if (!open || !linkReady || entry.phase === "submitting") return;
@@ -87,6 +119,54 @@ export function PlanCard({ entry, now, linkReady }: { entry: PlanEntry; now: num
         type: "plan-error",
         planId: plan.plan_id,
         error: `没收到电脑确认，请重试（${String(err).slice(0, 60)}）`,
+      });
+    }
+  };
+
+  // 撤销的是已经发生的移动，不是整份计划：写过的文件不回滚，这是边界。
+  // 电脑上没清单（没批 / 已撤 / 从没移动过）时接口回 404/409，原样说人话。
+  const undoMoves = async () => {
+    if (!canUndo || !linkReady || undo?.phase === "running" || undo?.phase === "done") return;
+    const title = moves.length === 1 ? "撤销这次移动？" : `撤销这 ${moves.length} 个移动？`;
+    if (
+      !window.confirm(
+        `${title}\n\n会按电脑上的撤销清单把文件移回原处；已经写入或修改过的文件不会改回。`,
+      )
+    ) {
+      return;
+    }
+    store.dispatch({ type: "undo-plan", planId: plan.plan_id });
+    try {
+      const res = await fetch(`/undo/${encodeURIComponent(plan.plan_id)}`, {
+        method: "POST",
+        headers: { "x-vance-token": getToken() },
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        moved?: unknown;
+        failed?: Array<{ from?: unknown; to?: unknown; reason?: unknown }>;
+        error?: unknown;
+      };
+      if (res.status === 404) throw new Error("电脑上没有可撤销的移动清单");
+      if (res.status === 409) throw new Error("这份移动已经撤销过，不能重复撤销");
+      if (!res.ok && !Array.isArray(body.failed)) throw new Error(`HTTP ${res.status}`);
+      const failed = (Array.isArray(body.failed) ? body.failed : []).map((f) => ({
+        from: String(f?.from ?? ""),
+        to: String(f?.to ?? ""),
+        reason: String(f?.reason ?? ""),
+      }));
+      store.dispatch({
+        type: "undo-result",
+        planId: plan.plan_id,
+        moved: Number(body.moved) || 0,
+        failed,
+      });
+    } catch (err) {
+      store.dispatch({
+        type: "undo-result",
+        planId: plan.plan_id,
+        moved: 0,
+        failed: [],
+        error: `撤销失败：${err instanceof Error ? err.message : String(err)}`.slice(0, 120),
       });
     }
   };
@@ -125,6 +205,47 @@ export function PlanCard({ entry, now, linkReady }: { entry: PlanEntry; now: num
           <button className="btn allow" type="button" disabled={!linkReady || entry.phase === "submitting"} onClick={() => void decide("allow")}>
             {entry.phase === "submitting" ? "提交中…" : "批准计划"}
           </button>
+        </div>
+      )}
+
+      {canUndo && (
+        <div className="plan-undo">
+          {undo?.phase === "running" && (
+            <button className="btn" type="button" disabled>
+              撤销中…
+            </button>
+          )}
+
+          {undo?.phase === "done" && (
+            <div className="plan-undo-ok">
+              {undo.moved > 0 ? `已撤销 ${undo.moved} 个移动` : "没有需要撤销的移动"}
+            </div>
+          )}
+
+          {(undo?.phase === "partial" || undo?.phase === "failed") && (
+            <>
+              {undo.failed.length > 0 && (
+                <div className="plan-undo-warn">
+                  撤销了 {undo.moved} 个，{undo.failed.length} 个没成功：
+                  {undo.failed.map((f) => reasonText(f.reason)).join("；")}
+                </div>
+              )}
+              {undo.error && <div className="card-error">{undo.error}</div>}
+              <button className="btn" type="button" disabled={!linkReady} onClick={() => void undoMoves()}>
+                重试撤销
+              </button>
+              <div className="plan-undo-note">只重试清单里还没成功的移动。</div>
+            </>
+          )}
+
+          {!undo && (
+            <>
+              <button className="btn" type="button" disabled={!linkReady} onClick={() => void undoMoves()}>
+                撤销这次移动（{moves.length}）
+              </button>
+              <div className="plan-undo-note">按电脑上的撤销清单移回原处；已经写过的文件不会改回。</div>
+            </>
+          )}
         </div>
       )}
     </div>

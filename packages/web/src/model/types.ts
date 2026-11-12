@@ -88,12 +88,19 @@ export interface PlanStep {
   facts?: Record<string, unknown>;
 }
 
+export interface PlanMove {
+  from: string;
+  to: string;
+}
+
 export interface PlanRequest {
   type: "plan_request";
   plan_id: string;
   session_id?: string;
   title?: string;
   steps: PlanStep[];
+  /** host 从 steps[].facts.moves 汇总出来；撤销按钮按它判断是否有东西可撤 */
+  moves?: PlanMove[];
   created_at?: number;
   expires_at: number;
 }
