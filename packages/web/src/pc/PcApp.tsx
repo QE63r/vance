@@ -70,6 +70,7 @@ export function PcApp() {
           hostOnline={snapshot.hostOnline}
           demo={snapshot.demo}
           theme={theme}
+          shell={query.get("shell") === "1"}
           onToggleTheme={() => setChoice(theme === "dark" ? "light" : "dark")}
         />
 

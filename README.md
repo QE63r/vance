@@ -2,7 +2,8 @@
 
 跨生态 Agent 移动控制面。P0/P1 已收口：会话视图、审批收敛、计划级审批、
 移动策略、交付物检阅、任务列表、事实契约都已接通；计划卡、撤销移动、撤销清单页已在真机验收。
-控制塔壳 1+2 已真机验收（命令条 fixed 修复后确认）；PC 客户端真实配对/软件发现/状态已接；远控待接。
+控制塔壳 1+2 已真机验收（命令条 fixed 修复后确认）；PC 真实配对/软件发现/状态已接；
+桌面壳 v0（托盘 + 隐藏 Host）已落地；远控待接。
 
 > 项目构想与计划书：[docs/product-plan.md](docs/product-plan.md)
 > 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-onboarding.md](docs/task-onboarding.md)
@@ -81,7 +82,8 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] 控制塔壳 1+2（真机验收通过）
 - [x] PC 客户端 UI（首次启动/主页/设置/软件/设备/账号菜单）
 - [x] PC 真实接线（`/pc/pair`、`/pc/apps`、`/pc/status`；本机限制；已配对重连通过）
-- [ ] PC 桌面壳 / 远控
+- [x] PC 桌面壳 v0（托盘 + 隐藏 Host + Edge app；冷启动通过；安装包待）
+- [ ] PC 远控 / 安装包
 - [ ] APK / 通知 / adapter-claude / relay
 
 ## 环境备注

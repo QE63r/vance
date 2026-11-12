@@ -38,6 +38,18 @@
   border-bottom: 1px solid var(--line);
   user-select: none;
 }
+.pc-shell-titlebar {
+  padding-right: 14px;
+  -webkit-app-region: drag;
+}
+.pc-shell-titlebar button,
+.pc-shell-titlebar .pc-logo,
+.pc-shell-titlebar .pc-brand {
+  -webkit-app-region: no-drag;
+}
+.pc-shell-titlebar .pc-window-controls {
+  display: none;
+}
 .pc-tb-left,
 .pc-tb-right {
   display: flex;

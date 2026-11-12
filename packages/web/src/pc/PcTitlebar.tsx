@@ -5,15 +5,17 @@ export function PcTitlebar({
   hostOnline,
   demo,
   theme,
+  shell = false,
   onToggleTheme,
 }: {
   hostOnline: boolean;
   demo: boolean;
   theme: Theme;
+  shell?: boolean;
   onToggleTheme: () => void;
 }) {
   return (
-    <header className="pc-titlebar">
+    <header className={`pc-titlebar${shell ? " pc-shell-titlebar" : ""}`}>
       <div className="pc-tb-left">
         <img
           className="pc-logo"
@@ -41,15 +43,19 @@ export function PcTitlebar({
           <PcIcon name={theme === "dark" ? "sun" : "moon"} size={14} />
         </button>
         <div className="pc-window-controls" aria-label="窗口控制">
-          <button type="button" className="pc-win-btn" title="最小化" aria-label="最小化">
-            <PcIcon name="minimize" size={10} />
-          </button>
-          <button type="button" className="pc-win-btn" title="最大化" aria-label="最大化">
-            <PcIcon name="maximize" size={10} />
-          </button>
-          <button type="button" className="pc-win-btn close" title="关闭" aria-label="关闭">
-            <PcIcon name="close" size={10} />
-          </button>
+          {!shell && (
+            <>
+              <button type="button" className="pc-win-btn" title="最小化" aria-label="最小化">
+                <PcIcon name="minimize" size={10} />
+              </button>
+              <button type="button" className="pc-win-btn" title="最大化" aria-label="最大化">
+                <PcIcon name="maximize" size={10} />
+              </button>
+              <button type="button" className="pc-win-btn close" title="关闭" aria-label="关闭">
+                <PcIcon name="close" size={10} />
+              </button>
+            </>
+          )}
         </div>
       </div>
     </header>
