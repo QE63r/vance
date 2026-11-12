@@ -1746,6 +1746,10 @@ export class HostServer {
         return;
       }
 
+      if (url.pathname === "/pc" || url.pathname === "/pc/") {
+        this.serveWeb(req, res, "/app/");
+        return;
+      }
       if (url.pathname === "/app" || url.pathname.startsWith("/app/")) {
         this.serveWeb(req, res, url.pathname);
         return;

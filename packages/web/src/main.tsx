@@ -5,6 +5,8 @@ import { store } from "./model/store";
 import { applyTheme, loadTheme } from "./app/theme";
 import { ENDPOINT_KEY, TOKEN_KEY, resolveCredentials } from "./net/credentials";
 import { boot } from "./net/ws";
+import { PcApp } from "./pc/PcApp";
+import { isPcLocation } from "./pc/pcMode";
 import "./styles.css";
 import "./shell.css";
 
@@ -14,6 +16,10 @@ if (!root) throw new Error("没有 #root");
 // 先定主题，再挂载，避免刷新时先闪一下白/黑
 applyTheme(loadTheme());
 
+if (isPcLocation(window.location)) {
+  // PC 客户端：本地页面，不抢手机 token，也不启动手机 WS。
+  createRoot(root).render(<PcApp />);
+} else {
 // 旧版把 token 放在 sessionStorage；升级后顺手搬到 localStorage，别让当前这台手机重新扫一次
 try {
   if (!localStorage.getItem(TOKEN_KEY)) {
@@ -62,4 +68,5 @@ if (import.meta.env.PROD && "serviceWorker" in navigator) {
       /* 注册失败仍可当普通网页用 */
     });
   });
+}
 }

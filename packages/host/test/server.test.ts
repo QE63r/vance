@@ -326,6 +326,20 @@ describe("host 静态托管 /app", () => {
     expect(await res.text()).toContain("SESSION-VIEW");
   });
 
+  it("/pc 也回构建出的 index.html，PC 入口不依赖手机 /app", async () => {
+    const webDir = webFixture();
+    server = makeServer({ port: 0, token: "s1pc", pagePath: PAGE, webDir, approveAllDevices: true });
+    const { port } = await server.start();
+
+    for (const path of ["/pc", "/pc/"]) {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`);
+      expect(res.status, path).toBe(200);
+      expect(res.headers.get("content-type"), path).toContain("text/html");
+      expect(res.headers.get("cache-control"), path).toBe("no-store");
+      expect(await res.text(), path).toContain("SESSION-VIEW");
+    }
+  });
+
   it("/app/assets/* 带内容哈希，给一年 immutable 缓存和正确的 content-type", async () => {
     const webDir = webFixture();
     server = makeServer({ port: 0, token: "s2", pagePath: PAGE, webDir, approveAllDevices: true });

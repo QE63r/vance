@@ -15,6 +15,8 @@ export default defineConfig(({ command }) => ({
       ignored: ["**/mock/**", "**/*.tmpdir/**", "**/.*.tmpdir/**"],
     },
     proxy: {
+      // PC 客户端在 dev 下读真实 host 的 /health；生产由 host 同源提供
+      "/health": { target: "http://127.0.0.1:8787" },
       // 页面和 WS 同源：浏览器连 /ws，Vite 转给本机的 host（dev 时是 mock/host.mjs）
       "/ws": {
         target: "ws://127.0.0.1:8787",
