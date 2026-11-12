@@ -73,7 +73,14 @@ export function PcDevices({
               <h3>添加手机</h3>
               <span className="pc-badge-muted">同一 Wi-Fi</span>
             </div>
-            {snapshot.demo ? (
+            {snapshot.pair ? (
+              <>
+                <div className="pc-qr-wrap small">
+                  <img className="pc-qr-image" src={snapshot.pair.qr} alt="配对二维码" />
+                </div>
+                <p>手机扫码后进入配对；二维码由本机 Host 生成。</p>
+              </>
+            ) : snapshot.demo ? (
               <>
                 <div className="pc-qr-wrap small">
                   <PcQr size={150} />
@@ -83,8 +90,8 @@ export function PcDevices({
             ) : (
               <div className="pc-qr-empty compact">
                 <PcIcon name="qr" size={28} />
-                <b>等待 Host 生成二维码</b>
-                <small>配对接口下一步接；当前先看界面。</small>
+                <b>{snapshot.error ?? "正在生成二维码"}</b>
+                <small>{snapshot.error ? "请在电脑本机打开 PC 页面。" : "Host 就绪后会自动出现。"}</small>
               </div>
             )}
             <button type="button" className="pc-btn ghost sm" onClick={onShowQr}>

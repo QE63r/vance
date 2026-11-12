@@ -48,14 +48,19 @@ export function PcApp() {
 
   const onAction = (app: PcAppInfo) => {
     if (app.action === "detect") {
-      flash(`${app.name}：检测接口待接；下一步接 Host 软件发现。`);
+      refresh();
+      flash(`${app.name}：已重新检测。`);
       return;
     }
     if (app.action === "install") {
-      flash(`${app.name}：官方安装入口待接。`);
+      flash(`${app.name}：安装入口待接。`);
       return;
     }
-    flash(`已接入 ${app.name}（界面预览；远控引擎下一步接）。`);
+    if (app.action === "attach") {
+      flash(`${app.name}：窗口已发现；远控引擎下一步接。`);
+      return;
+    }
+    flash(`${app.name}：打开入口待接。`);
   };
 
   return (
@@ -102,7 +107,7 @@ export function PcApp() {
                       setQrOpen(true);
                       return;
                     }
-                    flash("已通知手机：在手机上继续。");
+                    flash("远控引擎下一步接；当前已配对、已发现窗口。");
                   }}
                   onRefresh={refresh}
                 />
@@ -161,11 +166,19 @@ export function PcApp() {
                     </div>
                     <p>手机扫码后进入配对；同一 Wi-Fi 最快。公网入口下一步接。</p>
                   </>
+                ) : snapshot.pair ? (
+                  <>
+                    <div className="pc-qr-wrap">
+                      <img className="pc-qr-image" src={snapshot.pair.qr} alt="配对二维码" />
+                    </div>
+                    <div className="pc-pair-code">扫码后手机进入配对</div>
+                    <p>二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。</p>
+                  </>
                 ) : (
                   <div className="pc-qr-empty compact">
                     <PcIcon name="qr" size={28} />
-                    <b>等待 Host 生成二维码</b>
-                    <small>配对接口下一步接；当前先看界面。</small>
+                    <b>{snapshot.error ?? "正在生成二维码"}</b>
+                    <small>{snapshot.error ? "请在电脑本机打开 PC 页面。" : "Host 就绪后会自动出现。"}</small>
                   </div>
                 )}
               </div>

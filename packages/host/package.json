@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@vance/core": "workspace:*",
+    "qrcode": "^1.5.4",
     "ws": "^8.18.0"
   },
   "devDependencies": {

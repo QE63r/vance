@@ -313,6 +313,69 @@ describe("HostServer", () => {
   });
 });
 
+describe("PC 客户端本机接口", () => {
+  it("/pc/status 返回真实设备/待批/会话，非本机请求拒绝", async () => {
+    server = makeServer({ port: 0, token: "pc-status", pagePath: PAGE, approveAllDevices: true });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/pc/status`);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.ok).toBe(true);
+    expect(data.host.port).toBe(port);
+    expect(data.pending).toEqual({ approvals: 0, plans: 0, artifacts: 0 });
+
+    const blocked = await fetch(`http://127.0.0.1:${port}/pc/status`, {
+      headers: { "x-forwarded-for": "203.0.113.9" },
+    });
+    expect(blocked.status).toBe(403);
+  });
+
+  it("/pc/apps 用注入的检测器，不依赖本机安装状态", async () => {
+    const apps = [
+      {
+        id: "doubao",
+        name: "豆包",
+        initial: "豆",
+        tone: "blue" as const,
+        status: "running" as const,
+        note: "桌面版 · 运行中",
+        action: "attach" as const,
+      },
+    ];
+    server = makeServer({
+      port: 0,
+      token: "pc-apps",
+      pagePath: PAGE,
+      pcAppDetector: async () => apps,
+    });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/pc/apps`);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.apps).toEqual(apps);
+  });
+
+  it("/pc/pair 返回可扫的 URL 和 PNG data URL", async () => {
+    server = makeServer({ port: 0, token: "pc-pair", pagePath: PAGE });
+    const { port } = await server.start();
+
+    const res = await fetch(`http://127.0.0.1:${port}/pc/pair`);
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as any;
+    expect(data.ok).toBe(true);
+    expect(data.url).toContain("/app/#token=");
+    expect(data.url).toContain(`:${port}`);
+    expect(data.qr.startsWith("data:image/png;base64,")).toBe(true);
+
+    const blocked = await fetch(`http://127.0.0.1:${port}/pc/pair`, {
+      headers: { "x-forwarded-for": "203.0.113.9" },
+    });
+    expect(blocked.status).toBe(403);
+  });
+});
+
 describe("host 静态托管 /app", () => {
   it("/app/ 回的是构建出的 index.html（no-store），不是测试台页面", async () => {
     const webDir = webFixture();

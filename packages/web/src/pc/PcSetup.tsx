@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useState } from "react";
 import { PcIcon } from "./PcIcon";
 import { PcQr } from "./PcQr";
 import type { PcMode, PcSnapshot } from "./pcData";
@@ -109,13 +109,27 @@ export function PcSetup({
                     </div>
                     <p className="pc-qr-note">打开手机相机，或梵境 App 里的「扫一扫」。</p>
                   </>
+                ) : snapshot.pair ? (
+                  <>
+                    <div className="pc-qr-wrap">
+                      <img className="pc-qr-image" src={snapshot.pair.qr} alt="配对二维码" />
+                    </div>
+                    <div className="pc-pair-code">
+                      扫码后手机进入配对
+                    </div>
+                    <p className="pc-qr-note">二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。</p>
+                  </>
                 ) : (
                   <div className="pc-qr-empty">
                     <span className="pc-qr-empty-icon">
                       <PcIcon name="qr" size={34} />
                     </span>
-                    <b>等待 Host 生成二维码</b>
-                    <small>开发版尚未接本机配对接口；先看界面，下一步再接。</small>
+                    <b>{snapshot.error ?? "正在生成二维码"}</b>
+                    <small>
+                      {snapshot.error
+                        ? "请在电脑本机打开 PC 页面；公网入口不返回配对码。"
+                        : "Host 就绪后会自动出现；也可以点右上角刷新。"}
+                    </small>
                   </div>
                 )}
               </section>
@@ -139,8 +153,17 @@ export function PcSetup({
                 </div>
                 <div className="pc-field-label">电脑地址</div>
                 <div className="pc-address">
-                  <code>{snapshot.demo ? "192.168.1.8:8787" : `${location.host}`}</code>
-                  <button type="button" onClick={() => navigator.clipboard?.writeText(location.host)}>
+                  <code>
+                    {snapshot.pair
+                      ? new URL(snapshot.pair.url).host
+                      : snapshot.demo
+                        ? "192.168.1.8:8787"
+                        : location.host}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => navigator.clipboard?.writeText(snapshot.pair?.url ?? location.host)}
+                  >
                     复制
                   </button>
                 </div>

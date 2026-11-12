@@ -1,4 +1,4 @@
-﻿/* PC 客户端：1280×800 窗口壳，复用手机壳的 theme token。 */
+/* PC 客户端：1280×800 窗口壳，复用手机壳的 theme token。 */
 
 .pc-root {
   min-height: 100dvh;
@@ -652,6 +652,13 @@
   gap: 1px;
   margin: 0 auto;
   background: #fff;
+}
+.pc-qr-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 4px;
 }
 .pc-qr i {
   display: block;

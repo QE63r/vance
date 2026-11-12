@@ -13,11 +13,13 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
-import { homedir, networkInterfaces } from "node:os";
+import { homedir, hostname as osHostname, networkInterfaces } from "node:os";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, basename, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
+import QRCode from "qrcode";
 import type { AgentEvent } from "@vance/core";
+import { detectPcApps, type PcAppInfo } from "./pc-apps.js";
 
 /** 前端构建产物会出现的类型；其余按二进制发，别猜 */
 const MIME: Record<string, string> = {
@@ -184,6 +186,11 @@ export interface HostOptions {
   /** 项目名，展示用 */
   projectName?: string;
   /**
+   * PC 客户端软件发现。默认只读进程/安装路径；
+   * 测试可注入固定结果，避免依赖当前机器的安装状态。
+   */
+  pcAppDetector?: () => Promise<PcAppInfo[]>;
+  /**
    * 用户交代给 Agent 的原话。
    *
    * 为什么放在 Host 而不是事件里：它不是 Agent 产生的事实，是"人说的话"。
@@ -300,6 +307,7 @@ type UndoHandler = (planId: string, result: { moved: number; failed: number }) =
 export class HostServer {
   private http: Server | null = null;
   private wss: WebSocketServer | null = null;
+  private port: number | null = null;
   private readonly clients = new Set<WebSocket>();
   private handler: DecisionHandler | null = null;
   private profileHandler: ((profile: Profile, from: Profile) => void) | null = null;
@@ -1009,6 +1017,120 @@ export class HostServer {
     return this.tokens.has(String(req.headers["x-vance-token"] ?? ""));
   }
 
+  /**
+   * PC 页面只允许本机直接访问。
+   *
+   * 不能只看 remoteAddress：Cloudflared / Tailscale Funnel 会把公网请求
+   * 从本机转发进来，remoteAddress 也是 127.0.0.1。所以还要拒绝转发头、
+   * 并要求 Host 是 localhost/127.0.0.1；否则公网 `/pc/pair` 会把配对 token 送出去。
+   */
+  private isLocalRequest(req: IncomingMessage): boolean {
+    const forwarded =
+      req.headers["x-forwarded-for"] ??
+      req.headers["x-real-ip"] ??
+      req.headers["cf-connecting-ip"] ??
+      req.headers["tailscale-user-login"];
+    if (forwarded) return false;
+    const remote = String(req.socket.remoteAddress ?? "");
+    const loopback =
+      remote === "127.0.0.1" ||
+      remote === "::1" ||
+      remote === "::ffff:127.0.0.1" ||
+      remote === "::ffff:::1";
+    if (!loopback) return false;
+    const host = String(req.headers.host ?? "").toLowerCase();
+    return host.startsWith("127.0.0.1") || host.startsWith("localhost") || host.startsWith("[::1]");
+  }
+
+  private sendPcJson(
+    req: IncomingMessage,
+    res: ServerResponse,
+    status: number,
+    payload: unknown,
+  ): void {
+    res.writeHead(status, {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    res.end(req.method === "HEAD" ? undefined : JSON.stringify(payload));
+  }
+
+  private pcReadOnly(req: IncomingMessage, res: ServerResponse): boolean {
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      res.writeHead(405, { allow: "GET, HEAD" });
+      res.end("method not allowed");
+      return true;
+    }
+    if (!this.isLocalRequest(req)) {
+      this.sendPcJson(req, res, 403, { ok: false, error: "pc-local-only" });
+      return true;
+    }
+    return false;
+  }
+
+  private async handlePcPair(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (this.pcReadOnly(req, res)) return;
+    const port = this.port ?? this.options.port ?? 8787;
+    const entries = lanEntries(port).filter((e) => !/vEthernet|Loopback/i.test(e.iface));
+    const preferred =
+      entries.find((e) => /Wi-?Fi|WLAN|以太网|Ethernet/i.test(e.iface)) ?? entries[0];
+    const base = preferred?.url ?? `http://127.0.0.1:${port}`;
+    const url = `${base.replace(/\/$/, "")}/app/#token=${encodeURIComponent(this.options.token)}`;
+    try {
+      const qr = await QRCode.toDataURL(url, {
+        width: 512,
+        margin: 2,
+        color: { dark: "#11181f", light: "#ffffff" },
+        errorCorrectionLevel: "M",
+      });
+      this.sendPcJson(req, res, 200, {
+        ok: true,
+        url,
+        qr,
+        mode: preferred ? "lan" : "localhost",
+        expires_at: null,
+      });
+    } catch {
+      this.sendPcJson(req, res, 500, { ok: false, error: "qr-failed" });
+    }
+  }
+
+  private async handlePcApps(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (this.pcReadOnly(req, res)) return;
+    try {
+      const detector = this.options.pcAppDetector ?? detectPcApps;
+      const apps = await detector();
+      this.sendPcJson(req, res, 200, { ok: true, apps, detected_at: Date.now() });
+    } catch {
+      this.sendPcJson(req, res, 500, { ok: false, error: "apps-failed" });
+    }
+  }
+
+  private handlePcStatus(req: IncomingMessage, res: ServerResponse): void {
+    if (this.pcReadOnly(req, res)) return;
+    const session = this.activeSessionId ? this.sessions.get(this.activeSessionId) : null;
+    this.sendPcJson(req, res, 200, {
+      ok: true,
+      host: {
+        name: osHostname(),
+        project: this.options.projectName ?? "",
+        port: this.port ?? this.options.port ?? 8787,
+        version: "0.1.0",
+      },
+      devices: this.deviceCount,
+      trusted: this.devices.size,
+      pending: {
+        approvals: this.pendingApprovals.size,
+        plans: this.pendingPlans.size,
+        artifacts: this.artifactRecords.filter((r) => r.status === "pending").length,
+      },
+      session: session
+        ? { id: session.id, title: session.title, status: this.turnState }
+        : null,
+      profile: this.profile,
+    });
+  }
+
   private sendFile(req: IncomingMessage, res: ServerResponse, path: string, cacheControl: string): void {    let body: Buffer;
     try {
       body = readFileSync(path);
@@ -1036,6 +1158,20 @@ export class HostServer {
       if (url.pathname === "/health") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: true, devices: this.deviceCount }));
+        return;
+      }
+
+      // PC 客户端只允许本机：配对 QR 里带 token，公网入口不能拿。
+      if (url.pathname === "/pc/pair") {
+        void this.handlePcPair(req, res);
+        return;
+      }
+      if (url.pathname === "/pc/apps") {
+        void this.handlePcApps(req, res);
+        return;
+      }
+      if (url.pathname === "/pc/status") {
+        this.handlePcStatus(req, res);
         return;
       }
 
@@ -1840,6 +1976,7 @@ export class HostServer {
       http.listen(this.options.port ?? 0, hostname, () => {
         const address = http.address();
         const port = typeof address === "object" && address ? address.port : 0;
+        this.port = port;
         resolve({ port, urls: lanUrls(port) });
       });
     });
