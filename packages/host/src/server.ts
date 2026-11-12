@@ -75,6 +75,15 @@ export type RemoteInput =
   | { type: "text"; text: string }
   | { type: "stop" };
 
+/** 一个已经接入/可接入的 Agent；由启动器广告，Host 只负责展示与选择 */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  kind: string;
+  status: "connected" | "available" | "unavailable";
+  note?: string;
+}
+
 const PROFILES: Profile[] = ["read-only", "workspace", "full"];
 
 /** 「本轮产出」的结构化形状；前端产出区直接消费它，不再解析 notice 文案 */
@@ -199,6 +208,10 @@ export interface HostOptions {
   hostname?: string;
   /** 项目名，展示用 */
   projectName?: string;
+  /** 启动器广告的 Agent 列表；Host 不启动它们的进程 */
+  agents?: AgentInfo[];
+  /** 初始活动 Agent */
+  activeAgentId?: string;
   /**
    * PC 客户端软件发现。默认只读进程/安装路径；
    * 测试可注入固定结果，避免依赖当前机器的安装状态。
@@ -331,6 +344,9 @@ export class HostServer {
   private handler: DecisionHandler | null = null;
   private profileHandler: ((profile: Profile, from: Profile) => void) | null = null;
   private promptHandler: ((text: string) => void) | null = null;
+  private agentSelectHandler: ((id: string) => Promise<boolean> | boolean) | null = null;
+  private agents: AgentInfo[];
+  private activeAgentId: string;
   private stopHandler: (() => void) | null = null;
   private sessionNewHandler: (() => Promise<string>) | null = null;
   private sessionSwitchHandler: ((sessionId: string) => Promise<void>) | null = null;
@@ -411,6 +427,8 @@ export class HostServer {
     this.artifactStoreFile = options.artifactStoreFile ? resolve(options.artifactStoreFile) : null;
     this.policyFile = options.policyFile ? resolve(options.policyFile) : null;
     this.undoDir = options.undoDir ? resolve(options.undoDir) : null;
+    this.agents = options.agents ?? [];
+    this.activeAgentId = options.activeAgentId ?? this.agents[0]?.id ?? "";
     this.loadMovePolicy();
     const saved = this.loadProfile();
     // 完全权限是任务级的：重启不应该恢复成 full
@@ -661,6 +679,26 @@ export class HostServer {
   /** 手机要求停下来 */
   onStop(handler: () => void): void {
     this.stopHandler = handler;
+  }
+
+  /** 手机选择 Agent；启动器负责真正切换。返回 false 时 Host 保持原选择 */
+  onAgentSelect(handler: (id: string) => Promise<boolean> | boolean): void {
+    this.agentSelectHandler = handler;
+  }
+
+  /** 启动器更新 Agent 列表/当前选择，并广播给所有手机 */
+  setAgents(agents: AgentInfo[], activeAgentId?: string): void {
+    this.agents = agents;
+    if (activeAgentId && agents.some((a) => a.id === activeAgentId)) {
+      this.activeAgentId = activeAgentId;
+    } else if (!agents.some((a) => a.id === this.activeAgentId)) {
+      this.activeAgentId = agents[0]?.id ?? "";
+    }
+    this.emitAgents();
+  }
+
+  private emitAgents(): void {
+    this.emit({ type: "agents", agents: this.agents, active: this.activeAgentId });
   }
 
   /** 手机要求开新任务：由启动器去开 ACP 会话，host 只登记 */
@@ -2079,6 +2117,8 @@ export class HostServer {
         // 手机倒计时需要跟服务端同一个时钟；缺了它只能信手机本地时间
         server_time: Date.now(),
         profile: this.profile,
+        agents: this.agents,
+        agent: this.activeAgentId,
       }),
     );
 
@@ -2253,6 +2293,37 @@ export class HostServer {
         socket.send(JSON.stringify({ type: "event", event: pending.event, session_id: target.id }));
       }
       for (const plan of this.pendingPlanPayloads(target.id)) socket.send(JSON.stringify(plan));
+      return;
+    }
+    if (msg?.type === "agent/select" && typeof msg.agentId === "string") {
+      const id = msg.agentId;
+      if (!this.agents.some((a) => a.id === id)) {
+        socket.send(JSON.stringify({ type: "notice", level: "deny", text: `未知 Agent：${id}` }));
+        return;
+      }
+      void (async () => {
+        if (!this.agentSelectHandler) {
+          socket.send(JSON.stringify({ type: "notice", level: "deny", text: "当前 Host 不支持切换 Agent" }));
+          return;
+        }
+        try {
+          const ok = await this.agentSelectHandler(id);
+          if (!ok) {
+            socket.send(JSON.stringify({ type: "notice", level: "deny", text: "Agent 切换被拒绝" }));
+            return;
+          }
+          if (this.agents.some((a) => a.id === id)) this.activeAgentId = id;
+          this.emitAgents();
+        } catch (err) {
+          socket.send(
+            JSON.stringify({
+              type: "notice",
+              level: "deny",
+              text: `切换 Agent 失败：${String((err as Error)?.message ?? err).slice(0, 120)}`,
+            }),
+          );
+        }
+      })();
       return;
     }
     if (msg?.type === "prompt" && typeof msg.text === "string" && msg.text.trim()) {

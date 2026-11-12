@@ -400,6 +400,40 @@ describe("远控输入", () => {
   });
 });
 
+describe("Agent 列表与选择", () => {
+  it("hello 带 agents，切换后广播 agents 并更新 active", async () => {
+    server = makeServer({
+      port: 0,
+      token: "agents",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      agents: [
+        { id: "opencode", name: "Executor", kind: "acp", status: "connected" },
+        { id: "deepseek", name: "DeepSeek", kind: "openai-compatible", status: "available" },
+      ],
+      activeAgentId: "opencode",
+    });
+    server.onAgentSelect((id) => id === "deepseek");
+    const { port } = await server.start();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=agents`);
+    const messages: any[] = [];
+    ws.on("message", (raw) => messages.push(JSON.parse(String(raw))));
+    await new Promise((r) => ws.on("open", r));
+
+    await new Promise((r) => setTimeout(r, 50));
+    const hello = messages.find((m) => m.type === "hello");
+    expect(hello.agents.map((a: any) => a.id)).toEqual(["opencode", "deepseek"]);
+    expect(hello.agent).toBe("opencode");
+
+    ws.send(JSON.stringify({ type: "agent/select", agentId: "deepseek" }));
+    await new Promise((r) => setTimeout(r, 50));
+    const agents = messages.find((m) => m.type === "agents");
+    expect(agents.active).toBe("deepseek");
+    expect(agents.agents[1].name).toBe("DeepSeek");
+    ws.close();
+  });
+});
+
 describe("host 静态托管 /app", () => {
   it("/app/ 回的是构建出的 index.html（no-store），不是测试台页面", async () => {
     const webDir = webFixture();

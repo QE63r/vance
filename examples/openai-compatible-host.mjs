@@ -33,6 +33,19 @@ const host = new HostServer({
   approveAllDevices: true,
 });
 
+host.setAgents(
+  [
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      kind: "openai-compatible",
+      status: "connected",
+      note: process.env.OPENAI_MODEL ?? "deepseek-chat",
+    },
+  ],
+  "deepseek",
+);
+
 const adapter = new OpenAICompatibleAdapter(
   {
     id: "deepseek",

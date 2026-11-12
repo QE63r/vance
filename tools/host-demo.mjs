@@ -238,6 +238,19 @@ const host = new HostServer({
   // 临时免审批只留给单测，不在启动器里开。
 });
 
+host.setAgents(
+  [
+    {
+      id: "opencode",
+      name: "Executor",
+      kind: "acp",
+      status: "connected",
+      note: "opencode · ACP",
+    },
+  ],
+  "opencode",
+);
+
 // 规则只在启动器手里：host 通过这两个口查询/撤销，不直接读 rules.json
 host.onRules({
   list: () => [...remembered],

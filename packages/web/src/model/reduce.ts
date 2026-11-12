@@ -12,6 +12,7 @@
  */
 import type {
   AgentEvent,
+  AgentInfo,
   ApprovalEvent,
   ArtifactsPayload,
   Decision,
@@ -77,6 +78,9 @@ export interface State {
   task: string;
   /** 当前正在看哪条会话；hello / session 都会更新它 */
   sessionId: string;
+  /** 启动器广告的 Agent 列表及当前选择 */
+  agents: AgentInfo[];
+  activeAgent: string;
   /** 权限档位；hello / profile 都会更新它 */
   profile: Profile;
   /** 本地先画、还没等到服务端回显的那句话；回显时只确认，不重复 */
@@ -96,6 +100,8 @@ export const initialState: State = {
   project: "",
   task: "",
   sessionId: "",
+  agents: [],
+  activeAgent: "",
   profile: "workspace",
   pendingUser: null,
   lastEventAt: null,
@@ -233,12 +239,17 @@ function applyMsg(s: State, msg: ServerMsg, at: number): State {
         project: msg.project || s.project,
         task: msg.task ?? s.task,
         sessionId: msg.session_id ?? s.sessionId,
+        agents: msg.agents ?? s.agents,
+        activeAgent: msg.agent ?? s.activeAgent,
         profile: msg.profile ?? s.profile,
         link: { phase: "ready", attempts: 0 },
         device: { ...s.device, phase: "trusted", name: msg.device || s.device.name },
         // 还没见过任何一轮 = 空会话，等同于空闲；否则第一条消息永远发不出去
         exec: s.exec.phase === "unknown" ? { phase: "idle" } : s.exec,
       };
+
+    case "agents":
+      return { ...s, agents: msg.agents, activeAgent: msg.active };
 
     case "plan_request": {
       let next = s;

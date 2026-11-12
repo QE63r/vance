@@ -114,9 +114,29 @@ export interface PlanDecision {
   at: number;
 }
 
+/** 启动器广告的 Agent；Host 只展示和转发选择 */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  kind: string;
+  status: "connected" | "available" | "unavailable";
+  note?: string;
+}
+
 /** host → 手机 */
 export type ServerMsg =
-  | { type: "hello"; project: string; task?: string; device: string; session_id?: string; server_time?: number; profile?: Profile }
+  | {
+      type: "hello";
+      project: string;
+      task?: string;
+      device: string;
+      session_id?: string;
+      server_time?: number;
+      profile?: Profile;
+      agents?: AgentInfo[];
+      agent?: string;
+    }
+  | { type: "agents"; agents: AgentInfo[]; active: string }
   | { type: "history"; items: ServerMsg[]; session_id?: string }
   | { type: "event"; event: AgentEvent }
   | PlanRequest
@@ -145,6 +165,7 @@ export type ClientMsg =
   | { type: "session/new" }
   | { type: "session/switch"; sessionId: string }
   | { type: "screenshot" }
+  | { type: "agent/select"; agentId: string }
   | {
       type: "remote_pointer";
       action: "move" | "down" | "up" | "click" | "wheel";

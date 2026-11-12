@@ -174,6 +174,7 @@ export function Shell() {
                 onToggleTheme={() => setChoice(theme === "dark" ? "light" : "dark")}
                 onDrawer={() => setDrawer(true)}
                 onOpenTask={openTask}
+                onSelectAgent={(agentId) => send({ type: "agent/select", agentId })}
               />
             )}
             {route.tab === "artifacts" && (

@@ -155,13 +155,14 @@ in `examples/openai-compatible-host.mjs`.
 ## Status
 
 **v0.1 alpha** — the approval core and reference console are usable; the ecosystem is
-not. The ACP adapter (opencode) is integrated. The OpenAI-compatible chat adapter and
-its reference host exist, but are not yet wired into the product's agent selector.
-Tool-call approvals, relay, push notifications, and packaging are not done.
+not. The ACP adapter (opencode) is integrated. The OpenAI-compatible chat adapter has a
+reference host and can advertise itself in the console; host-side switching between
+multiple adapters in one process is next. Tool-call approvals, relay, push
+notifications, and packaging are not done.
 
 The roadmap is about **adding adapters and integrating them**, not adding surface area:
 
-1. Host integration for the second adapter (same approval UX)
+1. Host-side adapter switching for multiple agents
 2. Tool-call approval path for external models
 3. Relay + push, then packaging
 
