@@ -71,6 +71,7 @@ export function PcApp() {
           demo={snapshot.demo}
           theme={theme}
           shell={query.get("shell") === "1"}
+          frameless={query.get("frameless") === "1"}
           onToggleTheme={() => setChoice(theme === "dark" ? "light" : "dark")}
         />
 

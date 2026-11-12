@@ -54,6 +54,12 @@ html[data-theme="dark"] .pc-root {
 .pc-shell-titlebar .pc-window-controls {
   display: none;
 }
+.pc-frameless-titlebar {
+  -webkit-app-region: no-drag;
+}
+.pc-shell-titlebar.pc-frameless-titlebar .pc-window-controls {
+  display: flex;
+}
 .pc-tb-left,
 .pc-tb-right {
   display: flex;

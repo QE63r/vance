@@ -42,7 +42,7 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 ## 启动器
 
 日常用桌面上的 **梵境桌面** 快捷方式（指向 `packages/desktop/bin/VanceDesktop.exe`）：
-无终端、托盘常驻、Host 自动拉起、WebView2 原生窗口。
+无终端、托盘常驻、Host 自动拉起、无边框 WebView2 窗口。
 
 开发调试才用 **梵境 Vance** 终端（`start-dev.cmd`）：里面有 `t` 测试、`b` 构建、
 `k` 类型检查、`i` 装依赖、`s` git status、`l` 最近提交、`c` VS Code。
@@ -83,7 +83,7 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] 控制塔壳 1+2（真机验收通过）
 - [x] PC 客户端 UI（首次启动/主页/设置/软件/设备/账号菜单）
 - [x] PC 真实接线（`/pc/pair`、`/pc/apps`、`/pc/status`；本机限制；已配对重连通过）
-- [x] PC 桌面壳 v0（托盘 + 隐藏 Host + WebView2 原生窗口；冷启动通过；安装包待）
+- [x] PC 桌面壳 v0（托盘 + 隐藏 Host + 无边框 WebView2；冷启动通过；安装包待）
 - [ ] PC 远控 / 安装包
 - [ ] APK / 通知 / adapter-claude / relay
 

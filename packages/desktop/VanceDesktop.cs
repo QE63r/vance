@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Net.Http;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 using Microsoft.Web.WebView2.Core;
@@ -48,12 +49,12 @@ internal static class Program
 
 internal sealed class ShellContext : ApplicationContext
 {
-    private const string PanelUrl = "http://127.0.0.1:8787/pc?shell=1&view=home";
+    private const string PanelUrl = "http://127.0.0.1:8787/pc?shell=1&frameless=1&view=home";
     private const string HealthUrl = "http://127.0.0.1:8787/health";
 
     private readonly string _repo;
     private readonly string _logPath;
-    private readonly Form _form;
+    private readonly FramelessForm _form;
     private readonly WebView2 _web;
     private readonly NotifyIcon _tray;
     private readonly EventWaitHandle _showEvent;
@@ -69,13 +70,14 @@ internal sealed class ShellContext : ApplicationContext
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".vance", "desktop-host.log");
         Directory.CreateDirectory(Path.GetDirectoryName(_logPath)!);
 
-        _form = new Form
+        _form = new FramelessForm
         {
             Text = "梵境",
             StartPosition = FormStartPosition.CenterScreen,
             ClientSize = new Size(1280, 820),
             MinimumSize = new Size(1000, 700),
             BackColor = Color.FromArgb(15, 19, 24),
+            Padding = new Padding(5),
             Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath) ?? SystemIcons.Application,
         };
         _form.FormClosing += OnFormClosing;
@@ -194,6 +196,27 @@ internal sealed class ShellContext : ApplicationContext
         _web.CoreWebView2.NavigationCompleted += (_, e) =>
         {
             if (!e.IsSuccess) AppendLog("navigation failed: " + e.WebErrorStatus);
+        };
+        _web.CoreWebView2.WebMessageReceived += (_, e) =>
+        {
+            string message;
+            try { message = e.TryGetWebMessageAsString(); }
+            catch { return; }
+            switch (message)
+            {
+                case "minimize":
+                    _form.WindowState = FormWindowState.Minimized;
+                    break;
+                case "maximize":
+                    _form.ToggleMaximize();
+                    break;
+                case "close":
+                    _form.Hide();
+                    break;
+                case "drag":
+                    _form.BeginDrag();
+                    break;
+            }
         };
         _web.Source = new Uri(PanelUrl);
     }
@@ -371,5 +394,105 @@ internal sealed class ShellContext : ApplicationContext
             key.SetValue("VanceDesktop", $"\"{Application.ExecutablePath}\" --background");
         else
             key.DeleteValue("VanceDesktop", false);
+    }
+}
+
+internal sealed class FramelessForm : Form
+{
+    private const int WM_NCHITTEST = 0x0084;
+    private const int WM_NCLBUTTONDOWN = 0x00A1;
+    private const int HTCLIENT = 1;
+    private const int HTCAPTION = 2;
+    private const int HTLEFT = 10;
+    private const int HTRIGHT = 11;
+    private const int HTTOP = 12;
+    private const int HTTOPLEFT = 13;
+    private const int HTTOPRIGHT = 14;
+    private const int HTBOTTOM = 15;
+    private const int HTBOTTOMLEFT = 16;
+    private const int HTBOTTOMRIGHT = 17;
+
+    [DllImport("user32.dll")]
+    private static extern bool ReleaseCapture();
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, int wParam, int lParam);
+
+    public FramelessForm()
+    {
+        FormBorderStyle = FormBorderStyle.None;
+        DoubleBuffered = true;
+        ResizeRedraw = true;
+    }
+
+    public void ToggleMaximize()
+    {
+        if (WindowState == FormWindowState.Maximized)
+        {
+            WindowState = FormWindowState.Normal;
+        }
+        else
+        {
+            MaximizedBounds = Screen.FromControl(this).WorkingArea;
+            WindowState = FormWindowState.Maximized;
+        }
+    }
+
+    public void BeginDrag()
+    {
+        ReleaseCapture();
+        SendMessage(Handle, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        UpdateMaximizedBounds();
+    }
+
+    protected override void OnLocationChanged(EventArgs e)
+    {
+        base.OnLocationChanged(e);
+        UpdateMaximizedBounds();
+    }
+
+    protected override void OnSizeChanged(EventArgs e)
+    {
+        base.OnSizeChanged(e);
+        UpdateMaximizedBounds();
+    }
+
+    private void UpdateMaximizedBounds()
+    {
+        if (WindowState == FormWindowState.Normal)
+            MaximizedBounds = Screen.FromControl(this).WorkingArea;
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == WM_NCHITTEST && WindowState == FormWindowState.Normal)
+        {
+            base.WndProc(ref m);
+            if (m.Result.ToInt32() == HTCLIENT)
+            {
+                var point = PointToClient(Cursor.Position);
+                const int border = 6;
+                var left = point.X <= border;
+                var right = point.X >= ClientSize.Width - border;
+                var top = point.Y <= border;
+                var bottom = point.Y >= ClientSize.Height - border;
+
+                if (top && left) m.Result = (IntPtr)HTTOPLEFT;
+                else if (top && right) m.Result = (IntPtr)HTTOPRIGHT;
+                else if (bottom && left) m.Result = (IntPtr)HTBOTTOMLEFT;
+                else if (bottom && right) m.Result = (IntPtr)HTBOTTOMRIGHT;
+                else if (left) m.Result = (IntPtr)HTLEFT;
+                else if (right) m.Result = (IntPtr)HTRIGHT;
+                else if (top) m.Result = (IntPtr)HTTOP;
+                else if (bottom) m.Result = (IntPtr)HTBOTTOM;
+            }
+            return;
+        }
+        base.WndProc(ref m);
     }
 }
