@@ -96,14 +96,13 @@ body {
   min-height: calc(100dvh - 76px - env(safe-area-inset-bottom));
 }
 
-/* 命令条是 sticky；待批/最近交付物变长时，底部要留出与命令条等高的滚动余量，
-   否则最后一行会被命令条盖住（真机 360 宽、4 条待验收时复现）。 */
+/* 命令条是页面底栏，不跟内容滚：固定在 tabbar 上方，内容在它后面滚。 */
 .overview:not(.chat-mode) {
-  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
 }
 
 .overview .command-bar {
-  margin-top: auto;
+  margin-top: 0;
 }
 
 /* 对话态：控制卡片收起，时间线和输入栏在同一页 */
@@ -672,14 +671,17 @@ body {
 
 /* ── 命令条 / 底栏 ── */
 .command-bar {
-  position: sticky;
-  bottom: 2px;
+  position: fixed;
+  left: 50%;
+  bottom: calc(58px + env(safe-area-inset-bottom) + 8px);
+  z-index: 20;
+  transform: translateX(-50%);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  width: 100%;
-  margin-top: 10px;
+  width: min(398px, calc(100vw - 32px));
+  margin-top: 0;
   padding: 11px 12px;
   border: 1px solid var(--line);
   border-radius: 13px;
