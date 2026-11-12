@@ -1,9 +1,10 @@
 # 桌面壳 v0
 
-双击 `bin\VanceDesktop.exe`：
+双击 `bin\VanceDesktop.exe`（或桌面快捷方式 `梵境桌面.lnk`）：
 
 - 如果 8787 没有 Host，隐藏启动 `tools/host-demo.mjs`（无终端，日志写 `~/.vance/desktop-host.log`）；
 - 如果已有 Host，直接复用，不重复启动；
+- 已经有一个桌面壳在托盘时，再双击只打开面板，不再弹“已在运行”；
 - 用 Edge app 模式打开 `http://127.0.0.1:8787/pc?shell=1&view=home`；
 - 托盘常驻：打开面板 / 开机自启 / 打开日志 / 退出；
 - 关掉 Edge 窗口只关面板，Host 和托盘还在；从托盘退出时才停掉自己启动的 Host。

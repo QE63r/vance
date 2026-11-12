@@ -21,8 +21,12 @@ namespace VanceDesktop
             {
                 if (!created)
                 {
-                    MessageBox.Show("梵境桌面壳已经在运行，请从托盘打开。", "梵境 Vance",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    try { TrayContext.OpenPanelWindow(); }
+                    catch
+                    {
+                        MessageBox.Show("梵境桌面壳已经在运行，请从托盘打开。", "梵境 Vance",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
                     return;
                 }
                 Application.EnableVisualStyles();
@@ -36,12 +40,10 @@ namespace VanceDesktop
 
     internal sealed class TrayContext : ApplicationContext
     {
-        private const string PanelUrl = "http://127.0.0.1:8787/pc?shell=1&view=home";
+        internal const string PanelUrl = "http://127.0.0.1:8787/pc?shell=1&view=home";
         private const string HealthUrl = "http://127.0.0.1:8787/health";
         private readonly string _repo;
         private readonly string _logPath;
-        private readonly string _edge;
-        private readonly string _profile;
         private readonly NotifyIcon _tray;
         private Process _host;
         private bool _startedHost;
@@ -51,11 +53,7 @@ namespace VanceDesktop
             _repo = FindRepo();
             _logPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".vance", "desktop-host.log");
-            _edge = FindEdge();
-            _profile = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Vance", "EdgeProfile");
             Directory.CreateDirectory(Path.GetDirectoryName(_logPath));
-            Directory.CreateDirectory(_profile);
 
             _tray = new NotifyIcon();
             _tray.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
@@ -114,26 +112,35 @@ namespace VanceDesktop
         {
             try
             {
-                if (!string.IsNullOrEmpty(_edge))
-                {
-                    var args = string.Format(
-                        "--app={0} --user-data-dir=\"{1}\" --no-first-run --no-default-browser-check --window-size=1280,860",
-                        PanelUrl, _profile);
-                    Process.Start(new ProcessStartInfo(_edge, args)
-                    {
-                        UseShellExecute = false,
-                        WorkingDirectory = _repo,
-                    });
-                }
-                else
-                {
-                    Process.Start(PanelUrl);
-                }
+                OpenPanelWindow();
             }
             catch (Exception ex)
             {
                 AppendLog("open panel failed: " + ex.Message);
                 _tray.ShowBalloonTip(4000, "梵境", "打不开面板，请查看日志。", ToolTipIcon.Error);
+            }
+        }
+
+        internal static void OpenPanelWindow()
+        {
+            var edge = FindEdge();
+            if (!string.IsNullOrEmpty(edge))
+            {
+                var profile = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Vance", "EdgeProfile");
+                Directory.CreateDirectory(profile);
+                var args = string.Format(
+                    "--app={0} --user-data-dir=\"{1}\" --no-first-run --no-default-browser-check --window-size=1280,860",
+                    PanelUrl, profile);
+                Process.Start(new ProcessStartInfo(edge, args)
+                {
+                    UseShellExecute = false,
+                });
+            }
+            else
+            {
+                Process.Start(PanelUrl);
             }
         }
 
