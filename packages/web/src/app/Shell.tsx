@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { store, useVance } from "../model/store";
-import { latestArtifacts } from "../model/selectors";
+import { canSend, canStop, hintText, latestArtifacts } from "../model/selectors";
 import { send, getToken } from "../net/ws";
 import type { Profile } from "../model/types";
 import { ArtifactPreview } from "../ui/ArtifactPreview";
@@ -18,6 +18,7 @@ import { ArtifactsPage } from "./ArtifactsPage";
 import { ControlPage } from "./ControlPage";
 import { Drawer } from "./Drawer";
 import { Overview } from "./Overview";
+import { QuickComposer } from "./QuickComposer";
 import { TabBar } from "./Chrome";
 import { parseHash, tabHref, taskHref, type Tab } from "./routing";
 import { TaskDetail } from "./TaskDetail";
@@ -31,6 +32,7 @@ export function Shell() {
   const [hash, setHash] = useState(() => location.hash);
   const [now, setNow] = useState(() => Date.now());
   const [drawer, setDrawer] = useState(false);
+  const [quick, setQuick] = useState(false);
   const [sheet, setSheet] = useState<Sheet>(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [rules, setRules] = useState<string[]>([]);
@@ -155,6 +157,7 @@ export function Shell() {
                 onToggleTheme={() => setChoice(theme === "dark" ? "light" : "dark")}
                 onDrawer={() => setDrawer(true)}
                 onOpenTask={openTask}
+                onCompose={() => setQuick(true)}
                 onTab={(tab: Tab) => go(tabHref(tab))}
                 onOpenArtifact={(path) => {
                   setArtifactSession(s.sessionId);
@@ -198,6 +201,22 @@ export function Shell() {
           </main>
           <TabBar active={route.tab} onChange={(tab) => go(tabHref(tab))} />
         </>
+      )}
+
+      {quick && (
+        <QuickComposer
+          canSend={canSend(s)}
+          canStop={canStop(s)}
+          hint={hintText(s, now)}
+          title={s.task || s.project || "当前任务"}
+          onSend={(text) => {
+            const ok = send({ type: "prompt", text });
+            if (ok) store.dispatch({ type: "localUser", text, at: Date.now() });
+            return ok;
+          }}
+          onStop={() => send({ type: "stop" })}
+          onClose={() => setQuick(false)}
+        />
       )}
 
       {drawer && (

@@ -33,6 +33,7 @@ export function Overview({
   onToggleTheme,
   onDrawer,
   onOpenTask,
+  onCompose,
   onTab,
   onOpenArtifact,
 }: {
@@ -42,6 +43,7 @@ export function Overview({
   onToggleTheme: () => void;
   onDrawer: () => void;
   onOpenTask: () => void;
+  onCompose: () => void;
   onTab: (tab: Tab) => void;
   onOpenArtifact: (path: string) => void;
 }) {
@@ -217,9 +219,9 @@ export function Overview({
         <div className="card page-empty">还没有产出。等 Agent 做完一轮，这里会留下文件。</div>
       )}
 
-      <button className="command-bar" type="button" onClick={onOpenTask}>
+      <button className="command-bar" type="button" onClick={onCompose}>
         <span>对 Agent 说…</span>
-        <span className="command-go">打开任务 ›</span>
+        <span className="command-go">开始说 ›</span>
       </button>
     </div>
   );
