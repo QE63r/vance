@@ -1,16 +1,21 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Props {
   canSend: boolean;
   canStop: boolean;
   hint: string;
+  autoFocus?: boolean;
   onSend: (text: string) => boolean;
   onStop: () => void;
 }
 
-export function Composer({ canSend, canStop, hint, onSend, onStop }: Props) {
+export function Composer({ canSend, canStop, hint, autoFocus, onSend, onStop }: Props) {
   const [text, setText] = useState("");
   const area = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (autoFocus) area.current?.focus();
+  }, [autoFocus]);
 
   const submit = () => {
     const t = text.trim();

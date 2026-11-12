@@ -5,6 +5,7 @@ import { getToken } from "../net/ws";
 import type { Tab } from "./routing";
 import type { Theme } from "./theme";
 import { PageHeader } from "./Chrome";
+import { InlineChat } from "./InlineChat";
 
 interface PendingArtifact {
   id: string;
@@ -33,9 +34,11 @@ export function Overview({
   onToggleTheme,
   onDrawer,
   onOpenTask,
-  onCompose,
+  onChat,
   onTab,
   onOpenArtifact,
+  onOpenArtifacts,
+  chat,
 }: {
   state: State;
   now: number;
@@ -43,9 +46,11 @@ export function Overview({
   onToggleTheme: () => void;
   onDrawer: () => void;
   onOpenTask: () => void;
-  onCompose: () => void;
+  onChat: (open: boolean) => void;
   onTab: (tab: Tab) => void;
   onOpenArtifact: (path: string) => void;
+  onOpenArtifacts: () => void;
+  chat: boolean;
 }) {
   const [pendingArtifacts, setPendingArtifacts] = useState<PendingArtifact[]>([]);
   const approvals = pendingApprovals(state);
@@ -73,7 +78,7 @@ export function Overview({
   }, []);
 
   return (
-    <div className="page overview">
+    <div className={`page overview${chat ? " chat-mode" : ""}`}>
       <PageHeader
         eyebrow="CONTROL"
         title="总览"
@@ -92,7 +97,11 @@ export function Overview({
         <span className="chip">产出 {artifactCount}</span>
       </div>
 
-      <section className="card pending-card">
+      {chat ? (
+        <InlineChat now={now} onClose={() => onChat(false)} onOpenArtifacts={onOpenArtifacts} />
+      ) : (
+        <>
+          <section className="card pending-card">
         <div className="section-head">
           <h2>待你决定</h2>
           <span className="link" onClick={() => onTab("artifacts")} role="button" tabIndex={0}>
@@ -219,10 +228,12 @@ export function Overview({
         <div className="card page-empty">还没有产出。等 Agent 做完一轮，这里会留下文件。</div>
       )}
 
-      <button className="command-bar" type="button" onClick={onCompose}>
-        <span>对 Agent 说…</span>
-        <span className="command-go">开始说 ›</span>
-      </button>
+          <button className="command-bar" type="button" onClick={() => onChat(true)}>
+            <span>对 Agent 说…</span>
+            <span className="command-go">开始说 ›</span>
+          </button>
+        </>
+      )}
     </div>
   );
 }
