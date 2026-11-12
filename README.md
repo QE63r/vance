@@ -1,7 +1,7 @@
 # Vance（梵境）
 
 跨生态 Agent 移动控制面。P0/P1 已收口：会话视图、审批收敛、计划级审批、
-移动策略、交付物检阅、任务列表、事实契约都已接通；计划卡与撤销移动已在真机验收。
+移动策略、交付物检阅、任务列表、事实契约都已接通；计划卡、撤销移动、撤销清单页已在真机验收。
 
 > 项目构想与计划书：[docs/product-plan.md](docs/product-plan.md)
 > 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-control-shell.md](docs/task-control-shell.md)
@@ -73,7 +73,8 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] C2 计划级审批：`/plan`、`vance_plan`、计划卡、路径 grants
 - [x] 空计划 / 无具体目标计划拒收
 - [x] 移动策略（批量/禁止根目录）+ 撤销清单 + `/undo/:plan_id` + 手机撤销按钮
-- [x] `pnpm test`：160 passed / 0 failed
+- [x] `GET /undo` + 「⋯ → 撤销移动」清单页（刷新后仍可撤；撤销后清计划 grants）
+- [x] `pnpm test`：162 passed / 0 failed
 - [x] 手机真机点计划卡验收（批准 / 拒绝）
 - [ ] 控制塔壳 1+2
 - [ ] APK / 通知 / adapter-claude / relay
