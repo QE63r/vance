@@ -350,13 +350,22 @@ host.onRemoteInput((input) => {
 
 function startStreamer() {
   if (streamer) return;
-  streamer = spawn(
-    "powershell",
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screen-stream.ps1"),
-     "-Fps", "5", "-Width", "960", "-Quality", "55"],
-    { stdio: ["ignore", "pipe", "ignore"] },
-  );
-  console.log("  ▶ 实时画面已开启（5 fps）");
+  const native = join(HERE, "screen-capture.exe");
+  if (existsSync(native)) {
+    streamer = spawn(native, ["-fps", "30", "-width", "640", "-quality", "45"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    });
+    console.log("  ▶ 实时画面已开启（原生抓屏，目标 30 fps）");
+  } else {
+    streamer = spawn(
+      "powershell",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screen-stream.ps1"),
+       "-Fps", "5", "-Width", "960", "-Quality", "55"],
+      { stdio: ["ignore", "pipe", "ignore"] },
+    );
+    console.log("  ▶ 实时画面已开启（PowerShell 回退，5 fps）");
+  }
 
   let buf = Buffer.alloc(0);
   streamer.stdout.on("data", (chunk) => {

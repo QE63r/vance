@@ -84,7 +84,7 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] PC 客户端 UI（首次启动/主页/设置/软件/设备/账号菜单）
 - [x] PC 真实接线（`/pc/pair`、`/pc/apps`、`/pc/status`；本机限制；已配对重连通过）
 - [x] PC 桌面壳 v0（托盘 + 隐藏 Host + 无边框 WebView2；冷启动通过；安装包待）
-- [x] 远控 v1（全屏 5fps + 鼠标/键盘/文字/停止；窗口级待）
+- [x] 远控 v1（原生抓屏 ~20fps + 鼠标/键盘/文字/停止；窗口级待）
 - [ ] 安装包
 - [ ] APK / 通知 / adapter-claude / relay
 

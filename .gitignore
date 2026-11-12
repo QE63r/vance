@@ -3,6 +3,7 @@ dist/
 .turbo/
 packages/desktop/bin/
 packages/desktop/obj/
+tools/screen-capture.exe
 *.log
 .DS_Store
 .env

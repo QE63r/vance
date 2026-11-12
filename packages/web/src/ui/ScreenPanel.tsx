@@ -14,6 +14,7 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
   const [open, setOpen] = useState(false);
   const [control, setControl] = useState(false);
   const [text, setText] = useState("");
+  const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const lastMove = useRef(0);
   const time = frame.at
     ? new Date(frame.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
@@ -22,6 +23,7 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
   const stopControl = () => {
     if (control) send({ type: "remote_stop" });
     setControl(false);
+    setCursor(null);
   };
 
   const close = () => {
@@ -48,6 +50,7 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
   ) => {
     if (!control) return;
     const p = point(event);
+    setCursor(p);
     send({ type: "remote_pointer", action, ...p });
   };
 
@@ -120,6 +123,12 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
                     send({ type: "remote_pointer", action: "wheel", deltaY: delta, ...p });
                   }}
                 />
+                {control && cursor && (
+                  <span
+                    className="remote-cursor"
+                    style={{ left: `${cursor.x * 100}%`, top: `${cursor.y * 100}%` }}
+                  />
+                )}
                 {control && <span className="remote-hud">控制中 · 点击即操作电脑</span>}
               </div>
             ) : (
