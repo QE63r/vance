@@ -781,6 +781,23 @@ body {
   padding: 10px 0;
   border-top: 1px solid var(--line);
 }
+button.agent-row {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.agent-row:hover {
+  background: var(--soft);
+}
+button.agent-row:first-child {
+  border-top: 0;
+}
 
 .agent-row:first-child {
   border-top: 0;
