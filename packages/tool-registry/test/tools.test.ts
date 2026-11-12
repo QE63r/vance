@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -54,6 +54,29 @@ describe("builtin tool registry", () => {
       expect((await tools.execute("nope", {}, ctx)).ok).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects symlink/junction escapes", async () => {
+    const root = mkdtempSync(join(tmpdir(), "vance-tools-"));
+    const outside = mkdtempSync(join(tmpdir(), "vance-outside-"));
+    try {
+      writeFileSync(join(outside, "secret.txt"), "secret");
+      try {
+        symlinkSync(outside, join(root, "link"), "junction");
+      } catch {
+        return; // symlink creation may require privileges on some runners
+      }
+      const tools = createBuiltinTools();
+      const ctx = { workspaceRoot: root };
+      const read = await tools.execute("read_file", { path: "link/secret.txt" }, ctx);
+      expect(read.ok).toBe(false);
+      expect(read.content).toContain("escapes the workspace");
+      const write = await tools.execute("write_file", { path: "link/x.txt", content: "x" }, ctx);
+      expect(write.ok).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
     }
   });
 });

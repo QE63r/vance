@@ -1,12 +1,12 @@
-/**
+﻿/**
  * A deliberately small, path-sandboxed tool registry.
  *
- * The registry executes tools. It never decides whether a tool may run — that is
+ * The registry executes tools. It never decides whether a tool may run 鈥?that is
  * the host's policy/approval job. Built-ins stay inside `workspaceRoot` and cap
  * file sizes; there is intentionally no shell tool here.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import type { ToolDefinition, ToolResult } from "@vance/adapter-sdk";
 
@@ -55,12 +55,37 @@ function objectArgs(args: unknown): Record<string, unknown> {
 
 function inside(root: string, input: unknown, fallback = "."): { target: string; rel: string } {
   const raw = typeof input === "string" && input ? input : fallback;
+  if (raw.includes("\0")) throw new Error("path contains NUL");
+  if (raw.length > 4096) throw new Error("path is too long");
   if (isAbsolute(raw)) throw new Error("absolute paths are not allowed");
   const base = resolve(root);
   const target = resolve(base, raw);
   const rel = relative(base, target);
   if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("path escapes the workspace");
   return { target, rel: rel || "." };
+}
+
+function nearestExisting(path: string): string {
+  let probe = path;
+  while (!existsSync(probe)) {
+    const parent = dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
+  }
+  return probe;
+}
+
+/**
+ * Lexical checks are not enough: a workspace symlink/junction can point outside.
+ * Resolve the target (or its nearest existing parent) and compare real paths.
+ */
+function safeInside(root: string, input: unknown, fallback = "."): { target: string; rel: string } {
+  const { target, rel } = inside(root, input, fallback);
+  const baseReal = realpathSync(resolve(root));
+  const check = existsSync(target) ? realpathSync(target) : realpathSync(nearestExisting(target));
+  const realRel = relative(baseReal, check);
+  if (realRel.startsWith("..") || isAbsolute(realRel)) throw new Error("path escapes the workspace");
+  return { target, rel };
 }
 
 function displayPath(rel: string): string {
@@ -90,7 +115,7 @@ export function createBuiltinTools(): ToolRegistry {
         },
       },
       async execute(args, ctx) {
-        const { target, rel } = inside(ctx.workspaceRoot, objectArgs(args).path);
+        const { target, rel } = safeInside(ctx.workspaceRoot, objectArgs(args).path);
         if (!existsSync(target)) return { ok: false, content: `Not found: ${displayPath(rel)}` };
         const stat = statSync(target);
         if (!stat.isFile()) return { ok: false, content: `Not a file: ${displayPath(rel)}` };
@@ -112,7 +137,7 @@ export function createBuiltinTools(): ToolRegistry {
         },
       },
       async execute(args, ctx) {
-        const { target, rel } = inside(ctx.workspaceRoot, objectArgs(args).path);
+        const { target, rel } = safeInside(ctx.workspaceRoot, objectArgs(args).path);
         if (!existsSync(target)) return { ok: false, content: `Not found: ${displayPath(rel)}` };
         const stat = statSync(target);
         if (!stat.isDirectory()) return { ok: false, content: `Not a directory: ${displayPath(rel)}` };
@@ -142,7 +167,7 @@ export function createBuiltinTools(): ToolRegistry {
         if (Buffer.byteLength(content) > MAX_BYTES) {
           return { ok: false, content: `Content too large (max ${MAX_BYTES} bytes)` };
         }
-        const { target, rel } = inside(ctx.workspaceRoot, values.path);
+        const { target, rel } = safeInside(ctx.workspaceRoot, values.path);
         mkdirSync(dirname(target), { recursive: true });
         writeFileSync(target, content);
         return { ok: true, content: `Wrote ${Buffer.byteLength(content)} bytes to ${displayPath(rel)}` };

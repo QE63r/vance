@@ -16,7 +16,10 @@ fixtures, so the eval suite needs no API key or network.
 
 ```bash
 pnpm --filter @vance/toy-agent test
+pnpm --filter @vance/toy-agent eval
 ```
+
+`eval` prints one line per fixture and a `10/10 fixtures passed` summary.
 
 ## Fixtures
 
