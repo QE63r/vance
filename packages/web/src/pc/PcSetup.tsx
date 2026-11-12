@@ -91,7 +91,10 @@ export function PcSetup({
                 {step === 4 && "可以开始了"}
               </h1>
               <p className="pc-page-sub">
-                {step === 1 && "手机扫码后，电脑上的 AI 软件会出现在梵境里。"}
+                {step === 1 &&
+                  (snapshot.trusted > 0
+                    ? `已配对 ${snapshot.trusted} 台；打开手机上的梵境会自动重连，不用再扫。下面二维码用于添加新手机。`
+                    : "手机扫码后，电脑上的 AI 软件会出现在梵境里。")}
                 {step === 2 && "选一个要接力的软件；已安装的直接接入，未安装的可以稍后处理。"}
                 {step === 3 && "远控不需要装 Agent；只有自动化才需要组件。"}
                 {step === 4 && "手机会看到「接力」入口；离开电脑也能继续同一个窗口。"}
@@ -126,6 +129,11 @@ export function PcSetup({
                         ? "公网固定入口，手机流量或同一 Wi-Fi 都能扫。"
                         : "二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。"}
                     </p>
+                    {snapshot.trusted > 0 && (
+                      <div className="pc-paired-note">
+                        已配对 {snapshot.trusted} 台；老手机打开梵境会自动重连，不用扫这张码。
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div className="pc-qr-empty">

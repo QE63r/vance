@@ -59,7 +59,7 @@ export function PcSidebar({
             </span>
             <span>
               <b>{snapshot.phone.name}</b>
-              <small>同一 Wi-Fi · 已配对</small>
+              <small>已配对</small>
             </span>
           </div>
           <div className="pc-device-state">
@@ -69,12 +69,16 @@ export function PcSidebar({
         </div>
       ) : (
         <button type="button" className="pc-device-empty" onClick={() => onNavigate("devices")}>
-          <PcIcon name="qr" size={16} />
+          <PcIcon name={snapshot.trusted > 0 ? "phone" : "qr"} size={16} />
           <span>
-            <b>手机未连接</b>
-            <small>扫码配对</small>
+            <b>{snapshot.trusted > 0 ? "手机未在线" : "手机未连接"}</b>
+            <small>
+              {snapshot.trusted > 0
+                ? `已配对 ${snapshot.trusted} 台 · 打开手机重连`
+                : "扫码配对"}
+            </small>
           </span>
-            <PcIcon name="arrow" size={13} />
+          <PcIcon name="arrow" size={13} />
         </button>
       )}
 

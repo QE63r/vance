@@ -21,6 +21,7 @@ export function PcHome({
   onRefresh: () => void;
 }) {
   const phone = snapshot.phone;
+  const paired = snapshot.trusted > 0;
   const apps = snapshot.apps.slice(0, 4);
 
   return (
@@ -32,8 +33,10 @@ export function PcHome({
             <h1>在手机上继续</h1>
             <p className="pc-page-sub">
               {phone
-                ? `${phone.name} 已连接 · 同一 Wi-Fi · ${phone.lastSeen}`
-                : "手机还没连接；扫码后就能继续电脑上的 AI 窗口。"}
+                ? `${phone.name} 已连接 · ${phone.lastSeen}`
+                : paired
+                  ? `已配对 ${snapshot.trusted} 台；打开手机上的梵境会自动重连，不用再扫码。`
+                  : "手机还没连接；扫码后就能继续电脑上的 AI 窗口。"}
             </p>
           </div>
           <div className="pc-head-actions">
@@ -51,11 +54,11 @@ export function PcHome({
           <div className="pc-col">
             <section className={`pc-relay-card${phone ? "" : " empty"}`}>
               <span className="pc-relay-icon">
-                <PcIcon name={phone ? "phone" : "qr"} size={21} />
+                <PcIcon name={phone || paired ? "phone" : "qr"} size={21} />
               </span>
               <div className="pc-relay-main">
                 <h2>
-                  {phone ? "手机已连接" : "手机未连接"}
+                  {phone ? "手机已连接" : paired ? "手机未在线" : "手机未连接"}
                   {phone && (
                     <span className="pc-live">
                       <i />
@@ -63,16 +66,28 @@ export function PcHome({
                     </span>
                   )}
                 </h2>
-                <p>{phone ? `${phone.name} · 同一 Wi-Fi · ${phone.lastSeen}` : "扫码配对后，手机会看到电脑上的软件。"}</p>
+                <p>
+                  {phone
+                    ? `${phone.name} · ${phone.lastSeen}`
+                    : paired
+                      ? `已配对 ${snapshot.trusted} 台 · 当前没有在线连接；打开手机梵境即可重连。`
+                      : "扫码配对后，手机会看到电脑上的软件。"}
+                </p>
               </div>
               <div className="pc-relay-actions">
                 <button type="button" className="pc-btn ghost" onClick={onShowQr}>
-                  显示二维码
+                  {paired ? "添加新手机" : "显示二维码"}
                 </button>
-                <button type="button" className="pc-btn primary" onClick={onContinue} disabled={!phone}>
-                  在手机上继续
-                  <PcIcon name="arrow" size={13} />
-                </button>
+                {phone ? (
+                  <button type="button" className="pc-btn primary" onClick={onContinue}>
+                    在手机上继续
+                    <PcIcon name="arrow" size={13} />
+                  </button>
+                ) : (
+                  <button type="button" className="pc-btn primary" onClick={paired ? onRefresh : onShowQr}>
+                    {paired ? "刷新状态" : "扫码配对"}
+                  </button>
+                )}
               </div>
             </section>
 

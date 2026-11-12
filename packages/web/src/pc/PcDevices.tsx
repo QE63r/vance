@@ -33,8 +33,20 @@ export function PcDevices({
                 <PcIcon name="phone" size={23} />
               </span>
               <span>
-                <h2>{snapshot.phone?.name ?? "还没有手机连接"}</h2>
-                <p>{snapshot.phone ? "同一 Wi-Fi · 已配对 · 可随时移除" : "用二维码配对；不需要登录账号"}</p>
+                <h2>
+                  {snapshot.phone
+                    ? snapshot.phone.name
+                    : snapshot.trusted > 0
+                      ? `已配对 ${snapshot.trusted} 台`
+                      : "还没有手机连接"}
+                </h2>
+                <p>
+                  {snapshot.phone
+                    ? "已配对 · 可随时移除"
+                    : snapshot.trusted > 0
+                      ? "当前没有在线；打开手机上的梵境会自动重连，不用再扫码。"
+                      : "用二维码配对；不需要登录账号"}
+                </p>
               </span>
             </div>
             <div className="pc-device-rows">
@@ -70,7 +82,7 @@ export function PcDevices({
 
           <section className="pc-card pc-device-qr">
             <div className="pc-section-head compact">
-              <h3>添加手机</h3>
+              <h3>添加新手机</h3>
               <span className="pc-badge-muted">同一 Wi-Fi</span>
             </div>
             {snapshot.pair ? (

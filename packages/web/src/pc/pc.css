@@ -693,6 +693,18 @@
   line-height: 1.55;
   color: var(--faint);
 }
+.pc-paired-note {
+  margin: 9px auto 0;
+  padding: 7px 8px;
+  max-width: 214px;
+  border: 1px solid var(--accent-line);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  text-align: center;
+  font-size: 8.2px;
+  line-height: 1.5;
+  color: var(--accent-strong);
+}
 .pc-qr-empty {
   min-height: 180px;
   display: flex;

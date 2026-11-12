@@ -1133,7 +1133,7 @@ export class HostServer {
         version: "0.1.0",
       },
       devices: this.deviceCount,
-      trusted: this.devices.size,
+      trusted: [...this.devices.values()].filter((d) => d.approved).length,
       pending: {
         approvals: this.pendingApprovals.size,
         plans: this.pendingPlans.size,

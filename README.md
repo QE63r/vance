@@ -80,7 +80,7 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] 手机真机点计划卡验收（批准 / 拒绝）
 - [x] 控制塔壳 1+2（真机验收通过）
 - [x] PC 客户端 UI（首次启动/主页/设置/软件/设备/账号菜单）
-- [x] PC 真实接线（`/pc/pair`、`/pc/apps`、`/pc/status`；本机限制；待扫码验收）
+- [x] PC 真实接线（`/pc/pair`、`/pc/apps`、`/pc/status`；本机限制；已配对重连通过）
 - [ ] PC 桌面壳 / 远控
 - [ ] APK / 通知 / adapter-claude / relay
 
