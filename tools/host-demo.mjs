@@ -8,6 +8,7 @@ import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
 import QRCode from "qrcode";
 import { AcpClient, explainAction } from "../packages/adapter-opencode/dist/index.js";
+import { OpenAICompatibleAdapter } from "../packages/adapter-openai-compatible/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -238,6 +239,34 @@ const host = new HostServer({
   // 临时免审批只留给单测，不在启动器里开。
 });
 
+const externalKey = process.env.OPENAI_API_KEY ?? process.env.DEEPSEEK_API_KEY;
+const externalModel = process.env.OPENAI_MODEL ?? "deepseek-chat";
+const externalBaseUrl = process.env.OPENAI_BASE_URL ?? "https://api.deepseek.com";
+let externalAdapter = null;
+let activeAgentId = "opencode";
+
+if (externalKey) {
+  externalAdapter = new OpenAICompatibleAdapter(
+    {
+      id: "deepseek",
+      baseUrl: externalBaseUrl,
+      apiKey: externalKey,
+      model: externalModel,
+      systemPrompt: "You are the external AI agent inside Vance. Be concise.",
+    },
+    {
+      onChat: (messageId, text) => host.broadcastChat(messageId, text),
+      onStatus: (state, detail) => {
+        if (state === "running") host.broadcastTurn("running");
+        else if (state === "done") host.broadcastTurn("idle");
+        else host.broadcastNotice("deny", detail ?? "外部 AI 出错");
+      },
+      onError: (message) => host.broadcastNotice("deny", message),
+    },
+  );
+  await externalAdapter.start();
+}
+
 host.setAgents(
   [
     {
@@ -247,9 +276,42 @@ host.setAgents(
       status: "connected",
       note: "opencode · ACP",
     },
+    externalAdapter
+      ? {
+          id: "deepseek",
+          name: "DeepSeek",
+          kind: "openai-compatible",
+          status: "connected",
+          note: `${externalModel} · 外部 AI`,
+        }
+      : {
+          id: "deepseek",
+          name: "DeepSeek",
+          kind: "openai-compatible",
+          status: "unavailable",
+          note: "设置 OPENAI_API_KEY 后可用",
+        },
   ],
-  "opencode",
+  activeAgentId,
 );
+
+host.onAgentSelect((id) => {
+  if (running) {
+    host.broadcastNotice("deny", "任务在跑，先停再切换 Agent");
+    return false;
+  }
+  if (id === "opencode") {
+    activeAgentId = "opencode";
+    host.broadcastNotice("auto", "已切到 Executor（opencode）");
+    return true;
+  }
+  if (id === "deepseek" && externalAdapter) {
+    activeAgentId = "deepseek";
+    host.broadcastNotice("auto", `已切到 DeepSeek（${externalModel}）`);
+    return true;
+  }
+  return false;
+});
 
 // 规则只在启动器手里：host 通过这两个口查询/撤销，不直接读 rules.json
 host.onRules({
@@ -711,6 +773,7 @@ console.log("");
 
 // 任务生命周期：新开 / 真正切换。都要求当前没有一轮在跑，避免两轮抢同一个 ACP。
 host.onSessionNew(async () => {
+  if (activeAgentId !== "opencode") throw new Error("外部 AI 暂不支持新建任务");
   if (running) throw new Error("任务在跑，先停");
   const id = await client.newSession();
   sessionId = id;
@@ -723,6 +786,7 @@ host.onSessionNew(async () => {
   return id;
 });
 host.onSessionSwitch(async (id) => {
+  if (activeAgentId !== "opencode") throw new Error("外部 AI 暂不支持切换任务");
   if (running) throw new Error("任务在跑，先停");
   await client.loadSession(id);
   sessionId = id;
@@ -735,9 +799,23 @@ host.onSessionSwitch(async (id) => {
 });
 
 
-// 手机上发来的指令 → 交给 Agent 接着干
+// 手机上发来的指令 → 交给当前 Agent 接着干
 host.onPrompt(async (text) => {
   if (running) return;
+
+  if (activeAgentId === "deepseek" && externalAdapter) {
+    running = true;
+    console.log("\n  ▶ 手机指令（DeepSeek）：" + text);
+    try {
+      await externalAdapter.prompt(text);
+    } catch (err) {
+      console.log("  DeepSeek 出错：" + String(err));
+    } finally {
+      running = false;
+    }
+    return;
+  }
+
   running = true;
   host.broadcastTurn("running");
   console.log("\n  ▶ 手机指令：" + text);
@@ -803,6 +881,10 @@ host.onScreenshot(async () => {
 
 host.onStop(() => {
   console.log("  ⏹ 手机要求停止");
+  if (activeAgentId === "deepseek" && externalAdapter) {
+    externalAdapter.cancel();
+    return;
+  }
   planGrants.clear();
   turnGrants.clear();
   client.cancel(); // 先按协议请它停
