@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-06
-- 关联：ADR-0006、`docs/frontend-ia.md` §1 缺口 6 / §4.3、`docs/task-session-id.md`
+- 关联：ADR-0006、`docs/frontend-ia.md` §1 缺口 6 / §4.3、（内部任务卡已移除）
 
 ## 背景
 

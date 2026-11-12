@@ -165,7 +165,7 @@ in `examples/openai-compatible-host.mjs`.
 
 ## Status
 
-**v0.1 alpha** — the approval core and reference console are usable; the ecosystem is
+**v0.1.0 alpha** — the approval core and reference console are usable; the ecosystem is
 not. The ACP adapter (opencode) is integrated. When `OPENAI_API_KEY` is configured, the
 same Host also advertises the OpenAI-compatible adapter and the console can switch
 between both. A reference tool registry (`read_file` / `list_dir` / `write_file`) is
@@ -178,6 +178,8 @@ The roadmap is about **safe tools and adapters**, not adding surface area:
 
 1. Tool registry hardening + more tools
 2. Relay + push, then packaging
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the 0.1.0 release notes and known limitations.
 
 ---
 

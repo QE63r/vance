@@ -3,7 +3,7 @@
 - 状态：已接受
 - 日期：2026-11-07
 - 关联：`docs/event-model.md`（风险由 facts 计算）、`docs/adapter-contract.md`（只翻译不判断）、
-  `docs/task-facts-contract.md`
+  （内部任务卡已移除）
 
 ## 背景
 

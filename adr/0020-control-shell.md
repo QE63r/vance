@@ -2,7 +2,7 @@
 
 - 状态：**代码、文档、真机验收完成**（2026-11-12）
 - 日期：2026-11-12
-- 关联：`docs/task-control-shell.md`、`docs/frontend-ia.md`、ADR-0013（交付物检阅）、
+- 关联：（内部任务卡已移除）、`docs/frontend-ia.md`、ADR-0013（交付物检阅）、
   ADR-0018（任务生命周期）、`packages/web/src/app/Shell.tsx`
 
 ## 背景

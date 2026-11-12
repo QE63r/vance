@@ -39,9 +39,9 @@
 - 已安装 / 矩阵 / 可拉取
 - v1 只显示真实 Executor；Planner/Reviewer/Coder/Researcher/Operator 是 P2 占位，不假装可拉取/可切换
 - 点真实 Agent → 它的任务列表
-- **外部 AI（D 阶段，未开工）**：DeepSeek / 豆包这类桌面 AI 客户端，
-  标“外部 AI”，不按 ACP Agent 假装；Host 侧连接器，API 优先、GUI 兜底。
-  见 `docs/task-desktop-ai-bridge.md`。
+- **外部 AI（已落地）**：DeepSeek / 方舟这类 OpenAI-compatible 适配器，
+  标“外部 AI”，不按 ACP Agent 假装；Host 可广告、切换、审批其工具调用。
+  见 `README.md`、`docs/adapter-authoring.md`。
 
 **任务**（1+2+3）
 - 待批 / 运行中 / 待验收 / 已结束
@@ -97,12 +97,12 @@
 0. **欠账 P0**：~~交付物仓库~~ 已完成 v1（ADR-0017）；~~任务生命周期~~ 已完成 v1
    （ADR-0018：session/new、session/load、状态/待批/产出计数）。
    审批收敛（C）已完成（2026-11-12）：C1 计划外先问 + C2 计划审批、真机计划卡、
-   撤销移动、撤销清单页（刷新后可撤）。卡 `docs/task-approval-convergence.md`；ADR-0019。壳的数据地基已齐。
+   撤销移动、撤销清单页（刷新后可撤）。卡 （内部任务卡已移除）；ADR-0019。壳的数据地基已齐。
 1. **1+2 壳**：4 tab（总览/智能体/交付物/控制）、总览、命令条、任务详情（复用现有聊天）、智能体占位、控制页
 2. **1+2+3 任务流**：任务 tab、任务收件箱、任务详情分段（计划/日志/产出）
 3. **C 装得上/叫得应/安全**：APK、启动引导、完成提醒、设备身份
 4. **D 外部 AI 连接器**：DeepSeek / 豆包；智能体页；API 优先、GUI 兜底；
-   不是远程桌面。卡：`docs/task-desktop-ai-bridge.md`（方向已定，未开工）
+   不是远程桌面。卡：（内部任务卡已移除）（方向已定，未开工）
 5. **E/F 多智能体/账号**：拉取、矩阵编排、服务器指标；账号/中继/订阅另列 P2
 
 ---

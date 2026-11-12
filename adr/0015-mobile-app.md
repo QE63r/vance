@@ -2,7 +2,7 @@
 
 - 状态：已接受（代码完成；Android 主屏安装未通过，Chrome 仅生成浏览器快捷方式；桌面图标交给 APK）
 - 日期：2026-11-09
-- 关联：ADR-0014（固定入口与设备记住）、`docs/task-mobile-app.md`、`adr/0014-fixed-entry.md`
+- 关联：ADR-0014（固定入口与设备记住）、（内部任务卡已移除）、`adr/0014-fixed-entry.md`
 
 ## 背景
 

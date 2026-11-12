@@ -2,7 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-06
-- 关联：ADR-0006（第一屏）、`docs/task-host-static.md`（任务卡）、`docs/frontend-ia.md` §4.2
+- 关联：ADR-0006（第一屏）、（内部任务卡已移除）（任务卡）、`docs/frontend-ia.md` §4.2
 
 ## 背景
 
