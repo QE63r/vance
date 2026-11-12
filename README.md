@@ -6,8 +6,8 @@
 桌面壳 v0（托盘 + 隐藏 Host）已落地；远控待接。
 
 > 项目构想与计划书：[docs/product-plan.md](docs/product-plan.md)
-> 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-onboarding.md](docs/task-onboarding.md)
-> PC 客户端：`packages/web/src/pc/`；入口 `/pc` / `/app/#/pc`
+> 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-desktop-shell.md](docs/task-desktop-shell.md)
+> PC 客户端：`packages/web/src/pc/`；入口 `/pc` / `/app/#/pc`；桌面壳：`packages/desktop/`
 
 ## 结构
 
@@ -20,6 +20,7 @@ packages/
   policy/            禁止清单 / 只读判定 / 记住规则 / 本轮授权
   host/              HTTP + WS + 设备配对 + `/app/*` 静态托管
   web/               真前端（会话第一屏，Vite + React 19）
+  desktop/           WebView2 桌面壳 v0（.NET 8）
   relay/             控制面网关（P5，空壳）
 docs/                event-model / adapter-contract / frontend-ia
 adr/                 架构决策记录（0001–0020）
@@ -32,6 +33,7 @@ pnpm install
 pnpm test        # turbo 依次构建 core → 跑各包测试
 pnpm build
 pnpm typecheck
+pnpm desktop:build  # 桌面壳 v0（需要 .NET 8 SDK + NuGet）
 ```
 
 PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行一次
@@ -39,12 +41,11 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 
 ## 启动器
 
-双击桌面上的 **梵境 Vance** 快捷方式，会打开一个已配好 Node / pnpm / Git 的终端，
-并进入本目录。也可以直接运行仓库里的 `start-dev.cmd`。
-（当前是 Chrome 新标签页快捷方式，不是手机主屏 App；APK 未做。）
+日常用桌面上的 **梵境桌面** 快捷方式（指向 `packages/desktop/bin/VanceDesktop.exe`）：
+无终端、托盘常驻、Host 自动拉起、WebView2 原生窗口。
 
-窗口里的快捷命令：`t` 跑测试、`b` 构建、`k` 类型检查、`i` 装依赖、
-`s` git status、`l` 最近提交、`c` 用 VS Code 打开本项目。
+开发调试才用 **梵境 Vance** 终端（`start-dev.cmd`）：里面有 `t` 测试、`b` 构建、
+`k` 类型检查、`i` 装依赖、`s` git status、`l` 最近提交、`c` VS Code。
 
 ## 从哪读起（给不熟悉 TypeScript 的人）
 
@@ -82,7 +83,7 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] 控制塔壳 1+2（真机验收通过）
 - [x] PC 客户端 UI（首次启动/主页/设置/软件/设备/账号菜单）
 - [x] PC 真实接线（`/pc/pair`、`/pc/apps`、`/pc/status`；本机限制；已配对重连通过）
-- [x] PC 桌面壳 v0（托盘 + 隐藏 Host + Edge app；冷启动通过；安装包待）
+- [x] PC 桌面壳 v0（托盘 + 隐藏 Host + WebView2 原生窗口；冷启动通过；安装包待）
 - [ ] PC 远控 / 安装包
 - [ ] APK / 通知 / adapter-claude / relay
 

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .turbo/
 packages/desktop/bin/
+packages/desktop/obj/
 *.log
 .DS_Store
 .env

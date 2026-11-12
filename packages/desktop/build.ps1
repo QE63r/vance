@@ -1,20 +1,24 @@
-# 编译桌面壳 v0（.NET Framework 4.8，无 NuGet 依赖）
-
+# Build the desktop shell (native WebView2)
 $ErrorActionPreference = "Stop"
-$csc = @(
-  "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
-  "C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
-) | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $csc) { throw "csc.exe not found; need .NET Framework 4.x" }
-
+$dotnet = (Get-Command dotnet -ErrorAction Stop).Source
 $outDir = Join-Path $PSScriptRoot "bin"
-New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-$exe = Join-Path $outDir "VanceDesktop.exe"
-$icon = Join-Path $PSScriptRoot "assets\fanjing.ico"
 
-& $csc /nologo /target:winexe /platform:anycpu /out:"$exe" /win32icon:"$icon" `
-  "$PSScriptRoot\VanceDesktop.cs" `
-  /r:System.dll /r:System.Core.dll /r:System.Windows.Forms.dll /r:System.Drawing.dll `
-  /r:System.Net.Http.dll /r:System.Net.Sockets.dll
-if ($LASTEXITCODE -ne 0) { throw "csc failed: $LASTEXITCODE" }
-Write-Host "built $exe"
+$running = Get-Process -Name VanceDesktop -ErrorAction SilentlyContinue
+if ($running) {
+  throw "VanceDesktop.exe is running; quit it from the tray before building."
+}
+
+if (Test-Path $outDir) { Remove-Item $outDir -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $outDir | Out-Null
+
+$publishArgs = @(
+  "publish",
+  (Join-Path $PSScriptRoot "VanceDesktop.csproj"),
+  "-c", "Release",
+  "-r", "win-x64",
+  "--self-contained", "false",
+  "-o", $outDir
+)
+& $dotnet @publishArgs
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed: $LASTEXITCODE" }
+Write-Host "built $outDir\VanceDesktop.exe"
