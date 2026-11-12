@@ -1,9 +1,10 @@
 # Vance（梵境）
 
-跨生态 Agent 移动控制面。P0 已收口：会话视图、审批、审计、产出、任务列表、
-事实契约都已接通；下一张是交付物检阅。
+跨生态 Agent 移动控制面。P0/P1 已收口：会话视图、审批收敛、计划级审批、
+移动策略、交付物检阅、任务列表、事实契约都已接通。
 
 > 项目构想与计划书：[docs/product-plan.md](docs/product-plan.md)
+> 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-control-shell.md](docs/task-control-shell.md)
 
 ## 结构
 
@@ -18,7 +19,7 @@ packages/
   web/               真前端（会话第一屏，Vite + React 19）
   relay/             控制面网关（P5，空壳）
 docs/                event-model / adapter-contract / frontend-ia
-adr/                 架构决策记录（0001–0007）
+adr/                 架构决策记录（0001–0019）
 ```
 
 ## 命令
@@ -35,8 +36,9 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 
 ## 启动器
 
-双击桌面上的 **梵境 Vance** 图标，会打开一个已配好 Node / pnpm / Git 的终端，
+双击桌面上的 **梵境 Vance** 快捷方式，会打开一个已配好 Node / pnpm / Git 的终端，
 并进入本目录。也可以直接运行仓库里的 `start-dev.cmd`。
+（当前是 Chrome 新标签页快捷方式，不是手机主屏 App；APK 未做。）
 
 窗口里的快捷命令：`t` 跑测试、`b` 构建、`k` 类型检查、`i` 装依赖、
 `s` git status、`l` 最近提交、`c` 用 VS Code 打开本项目。
@@ -66,12 +68,19 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] policy：只读 facts；禁止/记住/只读/问人；不解析命令文本
 - [x] host：WS、设备配对、审批补发、`/app/*`、会话、审计、`/rules`
 - [x] web：会话第一屏、`⋯` 任务列表/切换、规则撤销、断线重连
-- [x] `pnpm test`：114 passed / 0 failed
-- [ ] 交付物检阅（`docs/task-artifact-review.md`，下一张）
-- [ ] token 从 query 挪到 hash；桌面审批接管；adapter-claude / relay
+- [x] 交付物仓库 / 任务生命周期 / token hash
+- [x] C1 审批收敛：工作区写/脚本先问，本轮同类放行
+- [x] C2 计划级审批：`/plan`、`vance_plan`、计划卡、路径 grants
+- [x] 空计划 / 无具体目标计划拒收
+- [x] 移动策略（批量/禁止根目录）+ 撤销清单 + `/undo/:plan_id`
+- [x] `pnpm test`：156 passed / 0 failed
+- [ ] 手机真机点计划卡验收
+- [ ] 手机撤销按钮、控制塔壳 1+2
+- [ ] APK / 通知 / adapter-claude / relay
 
 ## 环境备注
 
+- **开机自启当前是禁用状态**：`启动` 文件夹里是 `vance-autostart.cmd.disabled`。交付前要恢复（运行 `tools\install-service.cmd`）或每次用 `start-dev.cmd` 启动。
 - Node v24.21.0（计划书写的是 22 LTS；24 向下兼容，先按 24 走，M2 接 node-pty 时再验证）
 - git 2.56.0.3（winget 安装）
 - 提交身份临时设为 `Vance Dev <dev@vance.local>`，可在 `git config` 里改
