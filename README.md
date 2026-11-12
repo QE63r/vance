@@ -91,7 +91,9 @@ The host is local by default. A blind-forward relay is planned, not required for
 packages/
   core/              event schema + envelopes (zod)
   adapter-base/      fail-closed adapter base
-  adapter-opencode/  ACP adapter (current reference)
+  adapter-sdk/       AgentAdapter interface (start/prompt/cancel/close)
+  adapter-opencode/  ACP adapter (integrated)
+  adapter-openai-compatible/  OpenAI-compatible chat adapter (DeepSeek/Ark)
   policy/            deterministic policy engine
   host/              local host: HTTP + WS + device pairing
   web/               reference mobile console (PWA)
@@ -141,24 +143,27 @@ silent, approval-gated, or denied.
 
 - [`docs/event-model.md`](docs/event-model.md)
 - [`docs/adapter-contract.md`](docs/adapter-contract.md)
+- [`docs/adapter-authoring.md`](docs/adapter-authoring.md)
 - [`adr/0001-zod-as-schema-source.md`](adr/0001-zod-as-schema-source.md)
 
-An adapter SDK is on the roadmap. Today, start from `packages/adapter-opencode`.
+Start from `packages/adapter-sdk`, then look at `packages/adapter-opencode` and
+`packages/adapter-openai-compatible`. A reference host for the external adapter lives
+in `examples/openai-compatible-host.mjs`.
 
 ---
 
 ## Status
 
 **v0.1 alpha** — the approval core and reference console are usable; the ecosystem is
-not. One real adapter (opencode) is integrated. Relay, push notifications, packaging,
-and third-party adapters are not done yet.
+not. The ACP adapter (opencode) is integrated. The OpenAI-compatible chat adapter and
+its reference host exist, but are not yet wired into the product's agent selector.
+Tool-call approvals, relay, push notifications, and packaging are not done.
 
-The roadmap is about **adding adapters**, not adding features:
+The roadmap is about **adding adapters and integrating them**, not adding surface area:
 
-1. Adapter SDK + adapter authoring guide
-2. A second real adapter (Claude Code / Codex / OpenAI-compatible)
-3. Same approval UX across both
-4. Relay + push, then packaging
+1. Host integration for the second adapter (same approval UX)
+2. Tool-call approval path for external models
+3. Relay + push, then packaging
 
 ---
 

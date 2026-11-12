@@ -203,6 +203,12 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/adapter-openai-compatible:
+    dependencies:
+      '@vance/adapter-sdk':
+        specifier: workspace:*
+        version: link:../adapter-sdk
+
   packages/adapter-opencode:
     dependencies:
       '@vance/adapter-base':
@@ -211,6 +217,8 @@ importers:
       '@vance/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/adapter-sdk: {}
 
   packages/core:
     dependencies:
