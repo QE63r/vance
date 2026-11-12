@@ -16,8 +16,16 @@ export function getToken(): string {
   return currentToken;
 }
 
-/** 要看的会话：?session=<id>（或 hash）。没给就跟活动会话 */
+/** 要看的会话：任务详情 hash / ?session=<id> / 旧 hash。没给就跟活动会话 */
 function readSession(): string {
+  const fromTask = /^#\/task\/(.+)$/.exec(location.hash);
+  if (fromTask?.[1]) {
+    try {
+      return decodeURIComponent(fromTask[1]);
+    } catch {
+      /* 坏 id 就回落到默认会话 */
+    }
+  }
   const fromHash = new URLSearchParams(location.hash.replace(/^#/, "")).get("session");
   const fromQuery = new URLSearchParams(location.search).get("session");
   return fromHash || fromQuery || "";
