@@ -396,7 +396,7 @@ function stopStreamer() {
 streamWatch = setInterval(() => {
   if (host.deviceCount > 0) startStreamer();
   else stopStreamer();
-}, 3000);
+}, 1000);
 
 
 // 挑一张「真实」的网卡：优先 WLAN / Wi-Fi / 以太网，跳过虚拟网卡
