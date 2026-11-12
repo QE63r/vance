@@ -14,6 +14,7 @@ import { homedir, tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
+const LAB_REMOTE = join(REPO_ROOT, "labs", "remote", "tools");
 // desktop shell 启动时 PATH 可能很干净；必须用绝对路径，不能靠 "powershell"。
 const POWERSHELL = join(process.env.SystemRoot ?? "C:\\Windows",
   "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -329,7 +330,7 @@ function ensureRemoteInput() {
   if (inputProc) return inputProc;
   inputProc = spawn(
     POWERSHELL,
-    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "remote-input.ps1")],
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(LAB_REMOTE, "remote-input.ps1")],
     { stdio: ["pipe", "ignore", "ignore"], windowsHide: true },
   );
   inputProc.on("exit", () => {
@@ -353,7 +354,7 @@ host.onRemoteInput((input) => {
 
 function startStreamer() {
   if (streamer) return;
-  const native = join(HERE, "screen-capture.exe");
+  const native = join(LAB_REMOTE, "screen-capture.exe");
   if (existsSync(native)) {
     streamer = spawn(native, ["-fps", "30", "-width", "960", "-quality", "42"], {
       stdio: ["ignore", "pipe", "ignore"],
@@ -363,7 +364,7 @@ function startStreamer() {
   } else {
     streamer = spawn(
       POWERSHELL,
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screen-stream.ps1"),
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(LAB_REMOTE, "screen-stream.ps1"),
        "-Fps", "5", "-Width", "960", "-Quality", "55"],
       { stdio: ["ignore", "pipe", "ignore"] },
     );
