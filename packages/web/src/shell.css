@@ -96,6 +96,12 @@ body {
   min-height: calc(100dvh - 76px - env(safe-area-inset-bottom));
 }
 
+/* 命令条是 sticky；待批/最近交付物变长时，底部要留出与命令条等高的滚动余量，
+   否则最后一行会被命令条盖住（真机 360 宽、4 条待验收时复现）。 */
+.overview:not(.chat-mode) {
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
+}
+
 .overview .command-bar {
   margin-top: auto;
 }
