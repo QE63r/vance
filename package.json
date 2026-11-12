@@ -2,6 +2,11 @@
   "name": "vance",
   "version": "0.0.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/QE63r/vance.git"
+  },
   "packageManager": "pnpm@12.16.1",
   "engines": {
     "node": ">=22"
