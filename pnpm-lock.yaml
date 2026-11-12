@@ -188,6 +188,15 @@ importers:
         specifier: ^3.2.0
         version: 3.2.7(@types/node@24.19.2)(jsdom@30.1.3)
 
+  examples/toy-agent:
+    dependencies:
+      '@vance/adapter-sdk':
+        specifier: workspace:*
+        version: link:../../packages/adapter-sdk
+      '@vance/tool-registry':
+        specifier: workspace:*
+        version: link:../../packages/tool-registry
+
   packages/adapter-base:
     dependencies:
       '@vance/core':

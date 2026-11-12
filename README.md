@@ -100,6 +100,9 @@ packages/
   web/               reference mobile console (PWA)
   desktop/           reference WebView2 desktop shell (optional)
   relay/             planned blind-forward relay (empty)
+examples/
+  toy-agent/         minimal agent loop + 10 deterministic fixtures
+  openai-compatible-host.mjs
 docs/                event model, adapter contract, positioning
 adr/                 architecture decisions
 labs/remote/         experimental GUI takeover; not core
@@ -159,12 +162,13 @@ in `examples/openai-compatible-host.mjs`.
 not. The ACP adapter (opencode) is integrated. When `OPENAI_API_KEY` is configured, the
 same Host also advertises the OpenAI-compatible adapter and the console can switch
 between both. A reference tool registry (`read_file` / `list_dir` / `write_file`) is
-sandboxed to the workspace; writes go through an approval card. A general registry,
-shell tools, relay, push notifications, and packaging are not done.
+sandboxed to the workspace; writes go through an approval card. `examples/toy-agent`
+drives the same registry through a small agent loop and 10 deterministic fixtures.
+A general registry, shell tools, relay, push notifications, and packaging are not done.
 
 The roadmap is about **safe tools and adapters**, not adding surface area:
 
-1. Tool registry hardening + tests
+1. Tool registry hardening + more tools
 2. Relay + push, then packaging
 
 ---

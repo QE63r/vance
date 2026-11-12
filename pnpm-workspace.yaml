@@ -1,5 +1,6 @@
 packages:
   - "packages/*"
+  - "examples/toy-agent"
 
 # pnpm 11 默认阻止依赖的安装脚本；esbuild 需要它来放置二进制。
 allowBuilds:
