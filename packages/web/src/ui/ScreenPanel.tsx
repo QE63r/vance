@@ -1,4 +1,5 @@
 import {
+  useEffect,
   useRef,
   useState,
   useSyncExternalStore,
@@ -11,11 +12,33 @@ import { send } from "../net/ws";
 /** 控制页里的大画面；点开是全屏 viewer，可进入远控。 */
 export function ScreenPanel({ ready }: { ready: boolean }) {
   const frame = useSyncExternalStore(subscribeFrame, getFrame, getFrame);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [open, setOpen] = useState(false);
   const [control, setControl] = useState(false);
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const [size, setSize] = useState<"full" | "two-thirds">("full");
+  const [showKeys, setShowKeys] = useState(true);
+  const viewerRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const lastMove = useRef(0);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !frame.url) return;
+    let cancelled = false;
+    const image = new Image();
+    image.onload = () => {
+      if (cancelled) return;
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      canvas.getContext("2d")?.drawImage(image, 0, 0);
+    };
+    image.src = frame.url;
+    return () => {
+      cancelled = true;
+    };
+  }, [frame.url, open]);
   const time = frame.at
     ? new Date(frame.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
     : null;
@@ -29,6 +52,36 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
   const close = () => {
     stopControl();
     setOpen(false);
+    setShowKeys(true);
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => undefined);
+    }
+  };
+
+  const enterFullscreen = async () => {
+    const el = viewerRef.current;
+    if (!el) return;
+    setSize("full");
+    try {
+      if (!document.fullscreenElement) await el.requestFullscreen();
+      const orientation = screen.orientation as ScreenOrientation & {
+        lock?: (mode: "landscape") => Promise<void>;
+      };
+      await orientation.lock?.("landscape").catch(() => undefined);
+    } catch {
+      /* iOS / 不支持全屏时保持页面内全屏样式 */
+    }
+    inputRef.current?.blur();
+  };
+
+  const useTwoThirds = () => {
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    setSize("two-thirds");
+  };
+
+  const openPhoneKeyboard = () => {
+    setShowKeys(false);
+    inputRef.current?.focus();
   };
 
   const startControl = () => {
@@ -45,7 +98,7 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
   };
 
   const pointer = (
-    event: PointerEvent<HTMLImageElement>,
+    event: PointerEvent<HTMLCanvasElement>,
     action: "down" | "up" | "move" | "click",
   ) => {
     if (!control) return;
@@ -80,13 +133,17 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
 
       {open && (
         <div className="viewer" onClick={close}>
-          <div className="viewer-inner viewer-remote" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={viewerRef}
+            className={`viewer-inner viewer-remote size-${size}`}
+            onClick={(e) => e.stopPropagation()}
+          >
             {frame.url ? (
               <div className="remote-stage">
-                <img
-                  src={frame.url}
-                  alt="电脑屏幕"
-                  draggable={false}
+                <canvas
+                  ref={canvasRef}
+                  aria-label="电脑屏幕"
+                  role="img"
                   className={control ? "remote-image controlling" : "remote-image"}
                   onPointerDown={(e) => {
                     if (!control) return;
@@ -140,6 +197,24 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
                 {ready ? (control ? "远控中" : "实时画面") : "连接已断开"} · 最后更新 {time ?? "—"}
               </span>
               <div className="viewer-actions">
+                <button type="button" onClick={() => void enterFullscreen()}>
+                  全屏
+                </button>
+                <button
+                  type="button"
+                  className={size === "two-thirds" ? "active" : ""}
+                  onClick={useTwoThirds}
+                >
+                  2/3
+                </button>
+                <button type="button" onClick={openPhoneKeyboard}>
+                  手机键盘
+                </button>
+                {!showKeys && (
+                  <button type="button" onClick={() => setShowKeys(true)}>
+                    功能键
+                  </button>
+                )}
                 <button
                   type="button"
                   className={control ? "danger" : ""}
@@ -158,30 +233,36 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
               <div className="remote-tools">
                 <form className="remote-send" onSubmit={onText}>
                   <input
+                    ref={inputRef}
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                     placeholder="输入文字，回车发送到电脑"
                     aria-label="远控文字"
+                    inputMode="text"
+                    enterKeyHint="send"
+                    autoComplete="off"
                   />
                   <button type="submit">发送</button>
                 </form>
-                <div className="remote-keys">
-                  {[
-                    ["Enter", "回车"],
-                    ["Backspace", "退格"],
-                    ["Escape", "Esc"],
-                    ["ArrowUp", "↑"],
-                    ["ArrowDown", "↓"],
-                    ["ArrowLeft", "←"],
-                    ["ArrowRight", "→"],
-                  ].map(([name, label]) => (
-                    <button key={name} type="button" onClick={() => key(name)}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
+                {showKeys && (
+                  <div className="remote-keys">
+                    {[
+                      ["Enter", "回车"],
+                      ["Backspace", "退格"],
+                      ["Escape", "Esc"],
+                      ["ArrowUp", "↑"],
+                      ["ArrowDown", "↓"],
+                      ["ArrowLeft", "←"],
+                      ["ArrowRight", "→"],
+                    ].map(([name, label]) => (
+                      <button key={name} type="button" onClick={() => key(name)}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <p className="remote-hint">
-                  点击画面等于鼠标左键；长按/拖动可拖拽；右键菜单会被发送为右键点击。随时可停。
+                  点「手机键盘」会调起系统软键盘；点画面等于鼠标左键，长按/拖动可拖拽。随时可停。
                 </p>
               </div>
             )}
