@@ -1,10 +1,10 @@
 /**
- * OpenAI-compatible chat adapter.
+ * OpenAI-compatible adapter.
  *
  * Works with DeepSeek and Volcengine Ark (Doubao) because both expose the
- * OpenAI `/chat/completions` streaming shape. This is a *chat* adapter: it
- * demonstrates the SDK and the external-agent path. Tool-call approvals are a
- * separate layer and are intentionally not implemented here.
+ * OpenAI `/chat/completions` streaming shape. It supports optional tool calls;
+ * the host decides whether a tool may run (approval/policy) and returns a
+ * result. The adapter never executes tools itself.
  */
 
 import {
@@ -15,6 +15,8 @@ import {
   normalizeBaseUrl,
   type AgentAdapter,
   type AgentAdapterHandlers,
+  type ToolCall,
+  type ToolDefinition,
 } from "@vance/adapter-sdk";
 
 export interface OpenAICompatibleConfig {
@@ -23,13 +25,27 @@ export interface OpenAICompatibleConfig {
   apiKey: string;
   model: string;
   systemPrompt?: string;
+  tools?: ToolDefinition[];
   /** Injectable for tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
 }
 
+interface ToolCallPayload {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
+}
+
 interface ChatMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  tool_calls?: ToolCallPayload[];
+  tool_call_id?: string;
+}
+
+interface StreamResult {
   content: string;
+  toolCalls: ToolCall[];
 }
 
 export const PROVIDERS = {
@@ -49,6 +65,7 @@ export class OpenAICompatibleAdapter implements AgentAdapter {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly systemPrompt: string | undefined;
+  private readonly tools: ToolDefinition[];
   private readonly fetchImpl: typeof fetch;
   private readonly history: ChatMessage[] = [];
   private started = false;
@@ -65,6 +82,7 @@ export class OpenAICompatibleAdapter implements AgentAdapter {
     this.apiKey = config.apiKey;
     this.model = config.model;
     this.systemPrompt = config.systemPrompt;
+    this.tools = config.tools ?? [];
     this.fetchImpl = config.fetchImpl ?? fetch;
   }
 
@@ -91,67 +109,45 @@ export class OpenAICompatibleAdapter implements AgentAdapter {
     this.handlers.onStatus?.("running");
 
     try {
-      const messages = [
-        ...(this.systemPrompt ? [{ role: "system" as const, content: this.systemPrompt }] : []),
-        ...this.history,
-      ];
-      const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({ model: this.model, messages, stream: true }),
-        signal: controller.signal,
-      });
+      for (let round = 0; round < 5; round++) {
+        const result = await this.streamOnce(messageId, controller.signal);
+        if (result.toolCalls.length > 0) {
+          this.history.push({
+            role: "assistant",
+            content: result.content || null,
+            tool_calls: result.toolCalls.map((call) => ({
+              id: call.id,
+              type: "function" as const,
+              function: { name: call.name, arguments: call.arguments },
+            })),
+          });
 
-      if (!response.ok) {
-        const body = await response.text().catch(() => "");
-        throw new AdapterError(
-          `provider returned HTTP ${response.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
-          "http",
-        );
-      }
-      if (!response.body) throw new AdapterError("provider returned no body", "protocol");
-
-      let answer = "";
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let finished = false;
-
-      while (!finished) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        const lines = buffer.split(/\r?\n/);
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const data = trimmed.slice(5).trim();
-          if (!data) continue;
-          if (data === "[DONE]") {
-            finished = true;
-            break;
+          for (const call of result.toolCalls) {
+            let toolResult;
+            try {
+              toolResult = this.handlers.onToolCall
+                ? await this.handlers.onToolCall(call)
+                : { ok: false, content: "Tool calls are not enabled in this host." };
+            } catch (error) {
+              toolResult = {
+                ok: false,
+                content: `Tool handler failed: ${error instanceof Error ? error.message : String(error)}`,
+              };
+            }
+            this.history.push({
+              role: "tool",
+              tool_call_id: call.id,
+              content: toolResult.content,
+            });
           }
-          let parsed: unknown;
-          try {
-            parsed = JSON.parse(data);
-          } catch {
-            throw new AdapterError("provider sent malformed SSE", "protocol");
-          }
-          const content = (parsed as { choices?: { delta?: { content?: unknown } }[] })
-            .choices?.[0]?.delta?.content;
-          if (typeof content === "string" && content) {
-            answer += content;
-            this.handlers.onChat?.(messageId, content, true);
-          }
+          continue;
         }
-      }
 
-      if (answer) this.history.push({ role: "assistant", content: answer });
-      this.handlers.onStatus?.("done");
+        if (result.content) this.history.push({ role: "assistant", content: result.content });
+        this.handlers.onStatus?.("done");
+        return;
+      }
+      throw new AdapterError("tool loop exceeded 5 rounds", "protocol");
     } catch (error) {
       if (isAbortError(error)) {
         this.handlers.onStatus?.("done", "cancelled");
@@ -175,6 +171,104 @@ export class OpenAICompatibleAdapter implements AgentAdapter {
     this.closed = true;
     this.controller?.abort();
     this.history.length = 0;
+  }
+
+  private async streamOnce(messageId: string, signal: AbortSignal): Promise<StreamResult> {
+    const messages = [
+      ...(this.systemPrompt ? [{ role: "system" as const, content: this.systemPrompt }] : []),
+      ...this.history,
+    ];
+    const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages,
+        stream: true,
+        ...(this.tools.length > 0 ? { tools: this.tools } : {}),
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new AdapterError(
+        `provider returned HTTP ${response.status}${body ? `: ${body.slice(0, 300)}` : ""}`,
+        "http",
+      );
+    }
+    if (!response.body) throw new AdapterError("provider returned no body", "protocol");
+
+    let content = "";
+    const calls = new Map<number, { id: string; name: string; arguments: string }>();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finished = false;
+
+    while (!finished) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const data = trimmed.slice(5).trim();
+        if (!data) continue;
+        if (data === "[DONE]") {
+          finished = true;
+          break;
+        }
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(data);
+        } catch {
+          throw new AdapterError("provider sent malformed SSE", "protocol");
+        }
+        const delta = (
+          parsed as {
+            choices?: {
+              delta?: {
+                content?: unknown;
+                tool_calls?: Array<{
+                  index?: number;
+                  id?: string;
+                  function?: { name?: string; arguments?: string };
+                }>;
+              };
+            }[];
+          }
+        ).choices?.[0]?.delta;
+        if (typeof delta?.content === "string" && delta.content) {
+          content += delta.content;
+          this.handlers.onChat?.(messageId, delta.content, true);
+        }
+        for (const part of delta?.tool_calls ?? []) {
+          const index = typeof part.index === "number" ? part.index : 0;
+          const call = calls.get(index) ?? { id: "", name: "", arguments: "" };
+          if (part.id) call.id = part.id;
+          if (part.function?.name) call.name += part.function.name;
+          if (part.function?.arguments) call.arguments += part.function.arguments;
+          calls.set(index, call);
+        }
+      }
+    }
+
+    const toolCalls = [...calls.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([index, call]) => ({
+        id: call.id || `tool_${messageId}_${index}`,
+        name: call.name,
+        arguments: call.arguments,
+      }))
+      .filter((call) => call.name !== "");
+
+    return { content, toolCalls };
   }
 }
 

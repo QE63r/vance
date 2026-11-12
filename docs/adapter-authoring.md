@@ -37,9 +37,12 @@ See `packages/adapter-openai-compatible` (DeepSeek/Ark-compatible chat) and
 4. **Fixtures + contract tests**: record real payloads; no invented protocol.
 5. **Adapter isolation**: one ecosystem per package; do not import another adapter.
 
-## Approval path
+## Tool calls
 
-Chat adapters (like the OpenAI-compatible one) have no tool calls and therefore
-no approval requests. Tool-calling adapters must translate each tool proposal to
-an `ApprovalRequest` and wait for the host's decision before executing. A
-reference tool-calling adapter is on the roadmap.
+The OpenAI-compatible adapter supports tool calls. The host receives `onToolCall`,
+turns the call into an `approval_request`, waits for the phone's decision, executes
+the approved tool, and returns the result to the model.
+
+The reference host currently exposes one tool, `write_file`, restricted to the
+workspace. A general tool registry, path policy, and shell tools are next. An adapter
+must never execute a tool before the host approves it.

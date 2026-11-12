@@ -2,7 +2,7 @@
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { createHash, randomBytes } from "node:crypto";
 import { execSync, execFileSync, spawn } from "node:child_process";
-import { basename, dirname, extname, join } from "node:path";
+import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
@@ -52,6 +52,8 @@ const token = (() => {
 
 /** 等待人决定的请求：request_id → 回给 Agent 的函数 */
 const pending = new Map();
+/** 外部 AI 的工具调用审批：request_id → resolve(allow) */
+const externalPending = new Map();
 const repeatCount = new Map();
 // 本轮已授权的"同类操作"：key = 动词|目录。轮次结束就清空。
 const turnGrants = new Set();
@@ -239,6 +241,24 @@ const host = new HostServer({
   // 临时免审批只留给单测，不在启动器里开。
 });
 
+const EXTERNAL_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "write_file",
+      description: "Write a UTF-8 text file inside the current workspace. Requires human approval.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "Path relative to the workspace" },
+          content: { type: "string", description: "UTF-8 content" },
+        },
+        required: ["path", "content"],
+      },
+    },
+  },
+];
+
 const externalKey = process.env.OPENAI_API_KEY ?? process.env.DEEPSEEK_API_KEY;
 const externalModel = process.env.OPENAI_MODEL ?? "deepseek-chat";
 const externalBaseUrl = process.env.OPENAI_BASE_URL ?? "https://api.deepseek.com";
@@ -252,7 +272,8 @@ if (externalKey) {
       baseUrl: externalBaseUrl,
       apiKey: externalKey,
       model: externalModel,
-      systemPrompt: "You are the external AI agent inside Vance. Be concise.",
+      systemPrompt: "You are the external AI agent inside Vance. Be concise. Use write_file only when asked to create a file.",
+      tools: EXTERNAL_TOOLS,
     },
     {
       onChat: (messageId, text) => host.broadcastChat(messageId, text),
@@ -262,9 +283,87 @@ if (externalKey) {
         else host.broadcastNotice("deny", detail ?? "外部 AI 出错");
       },
       onError: (message) => host.broadcastNotice("deny", message),
+      onToolCall: runExternalTool,
     },
   );
   await externalAdapter.start();
+}
+
+
+/** 外部模型的唯一工具：写入 workspace，必须先经过 approval_request。 */
+async function runExternalTool(call) {
+  if (call.name !== "write_file") {
+    return { ok: false, content: `Unknown tool: ${call.name}` };
+  }
+  let args;
+  try {
+    args = JSON.parse(call.arguments || "{}");
+  } catch {
+    return { ok: false, content: "Invalid tool arguments" };
+  }
+  const path = typeof args?.path === "string" ? args.path : "";
+  const content = typeof args?.content === "string" ? args.content : "";
+  if (!path || content.length > 200_000) {
+    return { ok: false, content: "path is required and content must be <= 200KB" };
+  }
+  const target = resolve(CWD, path);
+  const rel = relative(CWD, target);
+  if (rel.startsWith("..") || rel === "" || rel.includes("\0")) {
+    return { ok: false, content: "path must stay inside the workspace" };
+  }
+
+  const raw = JSON.stringify({ tool: "write_file", path: rel, content });
+  const digest = createHash("sha256").update(raw).digest("hex");
+  const requestId = `ext_${randomBytes(8).toString("hex")}`;
+  const event = {
+    type: "approval_request",
+    request_id: requestId,
+    agent_id: "deepseek",
+    project_id: "sandbox",
+    timestamp: Date.now(),
+    raw_digest: digest,
+    raw_ref: { key: digest, length: Buffer.byteLength(raw) },
+    nonce: randomBytes(16).toString("hex"),
+    expires_at: Date.now() + 60_000,
+    policy_version: "v1",
+    signer: "host:local",
+    signature: "unsigned",
+    action_display: `write_file("${rel}")`,
+    facts: { kind: "edit", effect: "write", writes: [target] },
+    preview: content.slice(0, 2000),
+  };
+
+  const verdict = classifyApproval(event, {
+    remembered,
+    profile: host.currentProfile,
+    workspaceRoots: WORKSPACE_ROOTS,
+  });
+  if (verdict.deny) return { ok: false, content: `Denied by policy: ${verdict.reason}` };
+
+  let allowed = verdict.auto;
+  if (!allowed) {
+    allowed = await new Promise((resolveAllow) => {
+      const timer = setTimeout(() => {
+        externalPending.delete(requestId);
+        host.forget(requestId);
+        host.broadcastNotice("deny", "外部 AI 工具调用超时，已拒绝");
+        resolveAllow(false);
+      }, 60_000);
+      externalPending.set(requestId, { resolve: resolveAllow, timer });
+      host.broadcast(event);
+    });
+  }
+  if (!allowed) return { ok: false, content: "Denied by user" };
+
+  try {
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, content);
+    console.log(`  ✎ 外部 AI 写入：${rel}`);
+    host.broadcastNotice("auto", `外部 AI 已写入：${rel}`);
+    return { ok: true, content: `Wrote ${Buffer.byteLength(content)} bytes to ${rel}` };
+  } catch (err) {
+    return { ok: false, content: `Write failed: ${String(err)}` };
+  }
 }
 
 host.setAgents(
@@ -327,6 +426,14 @@ host.onRules({
 });
 
 host.onDecision(({ requestId, decision, by }) => {
+  const external = externalPending.get(requestId);
+  if (external) {
+    clearTimeout(external.timer);
+    externalPending.delete(requestId);
+    external.resolve(decision !== "reject");
+    console.log(`[host] 外部工具决定：${decision} 来自 ${by ?? "?"}`);
+    return true;
+  }
   const entry = pending.get(requestId);
   if (!entry) return false;
   if (decision === "remember" && entry.key && !remembered.includes(entry.key)) {

@@ -11,6 +11,26 @@ import { randomUUID } from "node:crypto";
 
 export type AdapterStatus = "running" | "done" | "error";
 
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: string;
+}
+
+export interface ToolResult {
+  ok: boolean;
+  content: string;
+}
+
 export interface AgentAdapterHandlers {
   /** Streaming assistant text. `delta` is true for an incremental chunk. */
   onChat?: (messageId: string, text: string, delta: boolean) => void;
@@ -18,6 +38,11 @@ export interface AgentAdapterHandlers {
   onStatus?: (state: AdapterStatus, detail?: string) => void;
   /** Transport/protocol errors; the adapter must also reject `prompt()`. */
   onError?: (message: string) => void;
+  /**
+   * A model requested a tool call. The adapter must wait for this promise and
+   * return the tool result to the model. The handler owns approval/execution.
+   */
+  onToolCall?: (call: ToolCall) => Promise<ToolResult>;
 }
 
 /**

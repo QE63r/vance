@@ -141,4 +141,83 @@ describe("OpenAI-compatible adapter", () => {
     await adapter.prompt("hi");
     await adapter.close();
   });
+
+  it("runs a tool call through the host handler and sends the result back", async () => {
+    const bodies: any[] = [];
+    const calls: Array<{ name: string; arguments: string }> = [];
+    let request = 0;
+    const adapter = new OpenAICompatibleAdapter(
+      {
+        baseUrl: "https://api.example.com",
+        apiKey: "k",
+        model: "m",
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "write_file",
+              description: "write a file",
+              parameters: { type: "object" },
+            },
+          },
+        ],
+        fetchImpl: async (_input, init) => {
+          bodies.push(JSON.parse(String(init?.body)));
+          request++;
+          if (request === 1) {
+            return sse([
+              `data: ${JSON.stringify({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: "call_1",
+                          function: { name: "write_file", arguments: '{"path":"out.txt",' },
+                        },
+                      ],
+                    },
+                  },
+                ],
+              })}\n\n`,
+              `data: ${JSON.stringify({
+                choices: [
+                  {
+                    delta: {
+                      tool_calls: [
+                        { index: 0, function: { arguments: '"content":"hi"}' } },
+                      ],
+                    },
+                  },
+                ],
+              })}\n\n`,
+              "data: [DONE]\n\n",
+            ]);
+          }
+          return sse([content("done"), "data: [DONE]\n\n"]);
+        },
+      },
+      {
+        onToolCall: async (call) => {
+          calls.push({ name: call.name, arguments: call.arguments });
+          return { ok: true, content: "wrote out.txt" };
+        },
+      },
+    );
+
+    await adapter.start();
+    await adapter.prompt("please write");
+    await adapter.close();
+
+    expect(calls).toEqual([
+      { name: "write_file", arguments: '{"path":"out.txt","content":"hi"}' },
+    ]);
+    expect(bodies[0].tools[0].function.name).toBe("write_file");
+    expect(bodies[1].messages.at(-1)).toEqual({
+      role: "tool",
+      tool_call_id: "call_1",
+      content: "wrote out.txt",
+    });
+  });
 });

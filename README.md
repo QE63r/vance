@@ -157,12 +157,13 @@ in `examples/openai-compatible-host.mjs`.
 **v0.1 alpha** — the approval core and reference console are usable; the ecosystem is
 not. The ACP adapter (opencode) is integrated. When `OPENAI_API_KEY` is configured, the
 same Host also advertises the OpenAI-compatible adapter and the console can switch
-between both. Tool-call approvals, relay, push notifications, and packaging are not
-done.
+between both. A reference tool-call path (`write_file`) goes through an approval card
+before writing; a general tool registry is not built yet. Relay, push notifications,
+and packaging are not done.
 
-The roadmap is about **adding adapters and integrating them**, not adding surface area:
+The roadmap is about **adding adapters and safe tools**, not adding surface area:
 
-1. Tool-call approval path for external models
+1. General tool registry + path/permission rules
 2. Relay + push, then packaging
 
 ---
