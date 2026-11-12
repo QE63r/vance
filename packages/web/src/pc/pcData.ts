@@ -20,7 +20,7 @@ export interface PcRecent {
   id: string;
   title: string;
   note: string;
-  kind: "PNG" | "TXT" | "DOC";
+  kind: string;
   at: string;
 }
 
@@ -36,6 +36,7 @@ export interface PcStatus {
   devices: number;
   trusted: number;
   pending: { approvals: number; plans: number; artifacts: number };
+  artifacts: Array<{ id: string; path: string; status: string; at: number }>;
   session: { id: string; title: string; status: string } | null;
   profile: string;
 }
@@ -75,6 +76,31 @@ const DEMO_RECENT: PcRecent[] = [
   { id: "r1", title: "豆包回答 · 截图", note: "远程留存 · 豆包", kind: "PNG", at: "2 分钟前" },
   { id: "r2", title: "plan-e2e.txt", note: "本轮 · 已验收", kind: "TXT", at: "12 分钟前" },
 ];
+
+function ago(at: number): string {
+  const mins = Math.max(0, Math.round((Date.now() - at) / 60_000));
+  if (mins < 1) return "刚刚";
+  if (mins < 60) return `${mins} 分钟前`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} 小时前`;
+  return `${Math.round(hours / 24)} 天前`;
+}
+
+function recentFrom(status: PcStatus | null): PcRecent[] {
+  if (!status) return [];
+  return status.artifacts.map((r) => {
+    const name = r.path.split(/[\\/]/).pop() ?? r.path;
+    const parent = r.path.replace(/[\\/][^\\/]+$/, "").split(/[\\/]/).pop() ?? "本机";
+    const ext = name.split(".").pop()?.slice(0, 3).toUpperCase() || "FILE";
+    return {
+      id: r.id,
+      title: name,
+      note: `${r.status === "pending" ? "待验收" : "已收"} · ${parent || "本机"}`,
+      kind: ext,
+      at: ago(r.at),
+    };
+  });
+}
 
 async function getJson<T>(url: string): Promise<T> {
   const res = await fetch(url, { cache: "no-store" });
@@ -158,7 +184,11 @@ export function usePcSnapshot(): { snapshot: PcSnapshot; refresh: () => void } {
 
   const refresh = useCallback(() => setReload((n) => n + 1), []);
 
-  const pending = status ? status.pending.approvals + status.pending.plans : demo ? 0 : null;
+  const pending = status
+    ? status.pending.approvals + status.pending.plans + status.pending.artifacts
+    : demo
+      ? 0
+      : null;
 
   return {
     snapshot: {
@@ -176,7 +206,7 @@ export function usePcSnapshot(): { snapshot: PcSnapshot; refresh: () => void } {
             }
           : null,
       apps: apps ?? (demo ? DEMO_APPS : BASE_APPS),
-      recent: demo ? DEMO_RECENT : [],
+      recent: demo ? DEMO_RECENT : recentFrom(status),
       pending,
       version: status?.host.version ?? "0.1.0",
       pair,

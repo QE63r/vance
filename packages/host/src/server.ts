@@ -1124,6 +1124,10 @@ export class HostServer {
         plans: this.pendingPlans.size,
         artifacts: this.artifactRecords.filter((r) => r.status === "pending").length,
       },
+      artifacts: [...this.artifactRecords]
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 5)
+        .map((r) => ({ id: r.id, path: r.path, status: r.status, at: r.at })),
       session: session
         ? { id: session.id, title: session.title, status: this.turnState }
         : null,
