@@ -2,9 +2,11 @@
 
 跨生态 Agent 移动控制面。P0/P1 已收口：会话视图、审批收敛、计划级审批、
 移动策略、交付物检阅、任务列表、事实契约都已接通；计划卡、撤销移动、撤销清单页已在真机验收。
+控制塔壳 1+2 代码完成（真机最终布局待确认）；PC 客户端 UI 已落（配对/发现/远控待接）。
 
 > 项目构想与计划书：[docs/product-plan.md](docs/product-plan.md)
-> 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-control-shell.md](docs/task-control-shell.md)
+> 当前交接：[HANDOFF.md](HANDOFF.md)；下一张卡：[docs/task-onboarding.md](docs/task-onboarding.md)
+> PC 客户端：`packages/web/src/pc/`；入口 `/pc` / `/app/#/pc`
 
 ## 结构
 
@@ -19,7 +21,7 @@ packages/
   web/               真前端（会话第一屏，Vite + React 19）
   relay/             控制面网关（P5，空壳）
 docs/                event-model / adapter-contract / frontend-ia
-adr/                 架构决策记录（0001–0019）
+adr/                 架构决策记录（0001–0020）
 ```
 
 ## 命令
@@ -74,9 +76,11 @@ PowerShell 里如果 `pnpm` 被执行策略拦住，用 `pnpm.cmd`，或执行�
 - [x] 空计划 / 无具体目标计划拒收
 - [x] 移动策略（批量/禁止根目录）+ 撤销清单 + `/undo/:plan_id` + 手机撤销按钮
 - [x] `GET /undo` + 「⋯ → 撤销移动」清单页（刷新后仍可撤；撤销后清计划 grants）
-- [x] `pnpm test`：162 passed / 0 failed
+- [x] `pnpm test`：169 passed / 0 failed
 - [x] 手机真机点计划卡验收（批准 / 拒绝）
-- [ ] 控制塔壳 1+2
+- [x] 控制塔壳 1+2（代码完成；真机最终布局待确认）
+- [x] PC 客户端 UI（首次启动/主页/设置/软件/设备/账号菜单；真实配对/发现/远控待接）
+- [ ] PC 真实配对 / 软件发现 / 远控
 - [ ] APK / 通知 / adapter-claude / relay
 
 ## 环境备注
