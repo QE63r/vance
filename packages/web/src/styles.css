@@ -1192,6 +1192,84 @@ button.chip {
   height: 32px;
 }
 
+/* 撤销移动清单：刷新后仍可撤 */
+.undo-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #16202e;
+}
+
+.undo-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.undo-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.undo-status {
+  font-size: 10.5px;
+}
+
+.undo-status.pending {
+  color: #fbbf24;
+}
+
+.undo-status.partial {
+  color: #fca5a5;
+}
+
+.undo-status.done {
+  color: #86efac;
+}
+
+.undo-time {
+  font-size: 10.5px;
+  color: #64748b;
+}
+
+.undo-moves {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.undo-move {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10.5px;
+  color: #cbd5e1;
+  overflow-wrap: anywhere;
+}
+
+.undo-msg {
+  margin-top: 5px;
+  font-size: 11px;
+}
+
+.undo-msg.ok {
+  color: #86efac;
+}
+
+.undo-msg.warn {
+  color: #fbbf24;
+}
+
+.undo-msg.error {
+  color: #fca5a5;
+}
+
+.undo-row .btn {
+  flex: 0 0 auto;
+  width: 64px;
+  height: 32px;
+}
+
 .card-error { margin-top: 6px; color: #fca5a5; font-size: 12px; }
 
 /* 权限档位 */

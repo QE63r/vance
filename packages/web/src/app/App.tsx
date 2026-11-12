@@ -7,14 +7,14 @@ import type { Profile } from "../model/types";
 import { Timeline } from "../ui/Timeline";
 import { Composer } from "../ui/Composer";
 import { ScreenMini } from "../ui/ScreenMini";
-import { ArtifactsSheet, ArtifactRepoSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, type SessionRow } from "../ui/Sheets";
+import { ArtifactsSheet, ArtifactRepoSheet, DeviceSheet, MenuSheet, ProfileSheet, RulesSheet, SessionsSheet, UndoSheet, type SessionRow } from "../ui/Sheets";
 import { ArtifactPreview } from "../ui/ArtifactPreview";
 import { PairScreen } from "./PairScreen";
 
 export function App() {
   const s = useVance();
   const [now, setNow] = useState(() => Date.now());
-  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules" | "profile" | "repo">(null);
+  const [sheet, setSheet] = useState<null | "artifacts" | "menu" | "sessions" | "rules" | "undo" | "profile" | "repo">(null);
   const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [artifactPath, setArtifactPath] = useState<string | null>(null);
   const [artifactSession, setArtifactSession] = useState<string | undefined>(undefined);
@@ -222,6 +222,7 @@ export function App() {
           onRepo={() => setSheet("repo")}
           onSessions={openSessions}
           onRules={openRules}
+          onUndo={() => setSheet("undo")}
           onProfile={() => setSheet("profile")}
           onForget={forget}
           onClose={() => setSheet(null)}
@@ -248,6 +249,7 @@ export function App() {
         />
       )}
       {sheet === "rules" && <RulesSheet rules={rules} onRevoke={revokeRule} onClose={() => setSheet(null)} />}
+      {sheet === "undo" && <UndoSheet onClose={() => setSheet(null)} />}
       {sheet === "profile" && (
         <ProfileSheet profile={s.profile} onPick={pickProfile} onClose={() => setSheet(null)} />
       )}

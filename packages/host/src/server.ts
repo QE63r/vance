@@ -14,7 +14,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { homedir, networkInterfaces } from "node:os";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, basename, extname, isAbsolute, join, resolve, sep } from "node:path";
 import { WebSocketServer, WebSocket } from "ws";
 import type { AgentEvent } from "@vance/core";
@@ -294,6 +294,8 @@ function planMoves(step: PlanStep): PlanMove[] {
 
 type PlanDecision = "allow" | "reject";
 type PlanHandler = (plan: PlanRecord, decision: PlanDecision, by: string) => void;
+/** 移动被撤销后通知上层；启动器用它清掉计划 grants */
+type UndoHandler = (planId: string, result: { moved: number; failed: number }) => void;
 
 export class HostServer {
   private http: Server | null = null;
@@ -322,6 +324,7 @@ export class HostServer {
   private readonly plans = new Map<string, PlanRecord>();
   private readonly planTtlMs = 5 * 60_000;
   private planHandler: PlanHandler | null = null;
+  private undoHandler: UndoHandler | null = null;
 
   /** 规则的持有者；没有注入时 /rules 返回空列表 */
   private rules: RulesProvider | null = null;
@@ -615,6 +618,11 @@ export class HostServer {
   /** 计划被批准/拒绝后通知上层；C2.2 用它换成计划 grants */
   onPlanDecision(handler: PlanHandler): void {
     this.planHandler = handler;
+  }
+
+  /** 移动被撤销后通知上层；C2.4 用它清掉计划 grants */
+  onUndo(handler: UndoHandler): void {
+    this.undoHandler = handler;
   }
 
   /** 手机发来一句新指令（让它接着干下一件事） */
@@ -1445,6 +1453,46 @@ export class HostServer {
         return;
       }
 
+      // 撤销清单列表：刷新/重连后仍能找到可撤销的移动（只看清单，不执行）
+      if (url.pathname === "/undo") {
+        if (!this.authorized(req)) {
+          res.writeHead(401, { "content-type": "application/json; charset=utf-8" });
+          res.end(JSON.stringify({ ok: false, error: "unauthorized" }));
+          return;
+        }
+        if (req.method !== "GET" && req.method !== "HEAD") {
+          res.writeHead(405, { allow: "GET, HEAD" });
+          res.end("method not allowed");
+          return;
+        }
+        const items: Array<{ plan_id: string; created_at: number; moves: PlanMove[]; status: string }> = [];
+        if (this.undoDir) {
+          try {
+            for (const name of readdirSync(this.undoDir)) {
+              if (!name.endsWith(".json")) continue;
+              try {
+                const manifest = JSON.parse(readFileSync(join(this.undoDir, name), "utf8")) as UndoManifest;
+                if (!manifest || !Array.isArray(manifest.moves)) continue;
+                items.push({
+                  plan_id: typeof manifest.plan_id === "string" ? manifest.plan_id : name.slice(0, -5),
+                  created_at: typeof manifest.created_at === "number" ? manifest.created_at : 0,
+                  moves: manifest.moves,
+                  status: manifest.status ?? "pending",
+                });
+              } catch {
+                /* 坏清单不影响其他条目 */
+              }
+            }
+          } catch {
+            /* 目录不存在 = 空清单 */
+          }
+        }
+        items.sort((a, b) => b.created_at - a.created_at);
+        res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+        res.end(req.method === "HEAD" ? undefined : JSON.stringify({ ok: true, items: items.slice(0, 100) }));
+        return;
+      }
+
       // 撤销清单：按计划号把 move 反向做回去。只处理清单里的路径。
       if (url.pathname.startsWith("/undo/")) {
         if (!this.authorized(req)) {
@@ -1500,6 +1548,9 @@ export class HostServer {
         try {
           writeFileSync(file, JSON.stringify(manifest, null, 2), "utf8");
         } catch {}
+        // 用户已经反悔：不论全成/部分失败，都通知启动器清掉计划 grants，
+        // 避免 Agent 在同一计划里马上把文件又移回去。
+        this.undoHandler?.(planId, { moved, failed: failed.length });
         res.writeHead(200, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
         res.end(JSON.stringify({ ok: failed.length === 0, moved, failed }));
         return;

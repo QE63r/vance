@@ -938,6 +938,97 @@ describe("移动计划：策略与撤销清单", () => {
     expect(existsSync(to)).toBe(false);
   });
 
+  it("/undo 能列出撤销清单（刷新后仍能撤），且必须带 token", async () => {
+    const dir = tempDir("vance-undo-list-");
+    const undoDir = join(dir, "undo");
+    const from = join(dir, "from.txt");
+    const to = join(dir, "to.txt");
+    writeFileSync(from, "x", "utf8");
+
+    server = makeServer({
+      port: 0,
+      token: "undo-list",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      policyFile: join(dir, "policy.json"),
+      undoDir,
+    });
+    server.useSession("ses_undo_list", "撤销清单");
+    const { port } = await server.start();
+
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "undo-list" },
+      body: JSON.stringify({
+        steps: [{ action_display: "移动 from", facts: { moves: [{ from, to }] } }],
+      }),
+    });
+    const planId = ((await created.json()) as any).plan_id;
+
+    await fetch(`http://127.0.0.1:${port}/plan/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "undo-list" },
+      body: JSON.stringify({ plan_id: planId, decision: "allow" }),
+    });
+
+    const noToken = await fetch(`http://127.0.0.1:${port}/undo`);
+    expect(noToken.status).toBe(401);
+
+    const listed = await fetch(`http://127.0.0.1:${port}/undo`, {
+      headers: { "x-vance-token": "undo-list" },
+    });
+    expect(listed.status).toBe(200);
+    const body = (await listed.json()) as any;
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].plan_id).toBe(planId);
+    expect(body.items[0].moves).toEqual([{ from, to }]);
+    expect(body.items[0].status).toBe("pending");
+  });
+
+  it("撤销后通知上层（用来清计划 grants）", async () => {
+    const dir = tempDir("vance-undo-hook-");
+    const undoDir = join(dir, "undo");
+    const from = join(dir, "from.txt");
+    const to = join(dir, "to.txt");
+    writeFileSync(from, "x", "utf8");
+
+    server = makeServer({
+      port: 0,
+      token: "undo-hook",
+      pagePath: PAGE,
+      approveAllDevices: true,
+      policyFile: join(dir, "policy.json"),
+      undoDir,
+    });
+    const calls: Array<{ planId: string; moved: number; failed: number }> = [];
+    server.onUndo((planId, result) => calls.push({ planId, ...result }));
+    server.useSession("ses_undo_hook", "撤销回调");
+    const { port } = await server.start();
+
+    const created = await fetch(`http://127.0.0.1:${port}/plan`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "undo-hook" },
+      body: JSON.stringify({
+        steps: [{ action_display: "移动 from", facts: { moves: [{ from, to }] } }],
+      }),
+    });
+    const planId = ((await created.json()) as any).plan_id;
+
+    await fetch(`http://127.0.0.1:${port}/plan/decision`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-vance-token": "undo-hook" },
+      body: JSON.stringify({ plan_id: planId, decision: "allow" }),
+    });
+    renameSync(from, to);
+
+    const undone = await fetch(`http://127.0.0.1:${port}/undo/${planId}`, {
+      method: "POST",
+      headers: { "x-vance-token": "undo-hook" },
+    });
+    expect(undone.status).toBe(200);
+    expect(calls).toEqual([{ planId, moved: 1, failed: 0 }]);
+  });
+
   it("批量上限和禁止根目录会拒绝计划", async () => {
     const dir = tempDir("vance-move-policy-");
     const a = join(dir, "a.txt");

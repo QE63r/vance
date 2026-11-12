@@ -300,6 +300,19 @@ host.onPlanDecision((plan, decision) => {
   }
 });
 
+// 撤销移动 = 用户反悔：清掉计划 grants，Agent 不能在同一计划里马上再移回去。
+host.onUndo((planId, result) => {
+  planGrants.clear();
+  const text =
+    result.failed > 0
+      ? `撤销移动：${result.moved} 个已还原，${result.failed} 个失败；计划内自动已清空`
+      : `已撤销 ${result.moved} 个移动；计划内自动已清空`;
+  host.broadcastNotice("auto", text);
+  console.log(
+    `  ★ 撤销移动：moved=${result.moved} failed=${result.failed} plan=${planId}，已清空计划 grants`,
+  );
+});
+
 const { port, urls } = await host.start();
 
 // ── 实时画面：有手机连着才抓屏，没人看就停（不白烧 CPU） ──

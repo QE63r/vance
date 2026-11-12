@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { ArtifactsPayload, DeviceRequest, Profile } from "../model/types";
+import type { ArtifactsPayload, DeviceRequest, PlanMove, Profile } from "../model/types";
+import { store } from "../model/store";
 import { getToken } from "../net/ws";
 
 function Sheet({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) {
@@ -220,6 +221,7 @@ export function MenuSheet({
   onRepo,
   onSessions,
   onRules,
+  onUndo,
   onProfile,
   onForget,
   onClose,
@@ -227,6 +229,7 @@ export function MenuSheet({
   onRepo: () => void;
   onSessions: () => void;
   onRules: () => void;
+  onUndo: () => void;
   onProfile: () => void;
   onForget: () => void;
   onClose: () => void;
@@ -243,6 +246,10 @@ export function MenuSheet({
       </button>
       <button className="menu-row" type="button" onClick={onRules}>
         <span>记住的规则</span>
+        <span className="menu-arrow">›</span>
+      </button>
+      <button className="menu-row" type="button" onClick={onUndo}>
+        <span>撤销移动</span>
         <span className="menu-arrow">›</span>
       </button>
       <button className="menu-row" type="button" onClick={onProfile}>
@@ -390,6 +397,166 @@ export function RulesSheet({
         </div>
       ))}
       <div className="sheet-note">撤销后，同类操作下次会重新问你。</div>
+    </Sheet>
+  );
+}
+
+interface UndoItem {
+  plan_id: string;
+  created_at?: number;
+  moves: PlanMove[];
+  status: "pending" | "partial" | "done";
+}
+
+const UNDO_STATUS: Record<UndoItem["status"], string> = {
+  pending: "待撤销",
+  partial: "部分失败",
+  done: "已撤销",
+};
+
+function undoTime(at?: number): string {
+  if (!at) return "";
+  try {
+    return new Date(at).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return "";
+  }
+}
+
+function undoReason(reason: string): string {
+  if (reason === "target-missing") return "目标文件不在了";
+  if (reason === "source-exists") return "原位置已有同名文件";
+  return reason || "未知原因";
+}
+
+interface UndoMessage {
+  text: string;
+  level: "ok" | "warn" | "error";
+}
+
+export function UndoSheet({ onClose }: { onClose: () => void }) {
+  const [items, setItems] = useState<UndoItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState<Record<string, UndoMessage>>({});
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/undo", { headers: { "x-vance-token": getToken() } })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+        return (await res.json()) as { items?: UndoItem[] };
+      })
+      .then((data) => {
+        if (alive) setItems(data.items ?? []);
+      })
+      .catch(() => {
+        if (alive) setError("取不到撤销清单，请重试");
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const undo = async (item: UndoItem) => {
+    if (busy) return;
+    if (
+      !window.confirm(
+        `撤销这份移动清单？\n\n会把 ${item.moves.length} 个文件按清单移回原处；写过的文件不会改回。`,
+      )
+    ) {
+      return;
+    }
+    setBusy(item.plan_id);
+    setMessage((m) => {
+      const next = { ...m };
+      delete next[item.plan_id];
+      return next;
+    });
+    try {
+      const res = await fetch(`/undo/${encodeURIComponent(item.plan_id)}`, {
+        method: "POST",
+        headers: { "x-vance-token": getToken() },
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        moved?: unknown;
+        failed?: Array<{ from?: unknown; to?: unknown; reason?: unknown }>;
+      };
+      if (res.status === 404) throw new Error("电脑上没有这份清单了");
+      if (res.status === 409) throw new Error("已经撤销过，不能重复撤销");
+      if (!res.ok && !Array.isArray(body.failed)) throw new Error(`HTTP ${res.status}`);
+      const moved = Number(body.moved) || 0;
+      const failed = (Array.isArray(body.failed) ? body.failed : []).map((f) => ({
+        from: String(f?.from ?? ""),
+        to: String(f?.to ?? ""),
+        reason: String(f?.reason ?? ""),
+      }));
+      setItems((list) =>
+        list.map((it) => (it.plan_id === item.plan_id ? { ...it, status: failed.length ? "partial" : "done" } : it)),
+      );
+      setMessage((m) => ({
+        ...m,
+        [item.plan_id]: failed.length
+          ? {
+              text: `撤销了 ${moved} 个；没成功：${failed.map((f) => undoReason(f.reason)).join("；")}`,
+              level: "warn",
+            }
+          : { text: `已撤销 ${moved} 个移动`, level: "ok" },
+      }));
+      // 计划卡还在时间线里时，顺手把它也切到“已撤销/部分失败”
+      store.dispatch({ type: "undo-result", planId: item.plan_id, moved, failed });
+    } catch (err) {
+      setMessage((m) => ({
+        ...m,
+        [item.plan_id]: {
+          text: `撤销失败：${err instanceof Error ? err.message : String(err)}`,
+          level: "error",
+        },
+      }));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <Sheet title="撤销移动" onClose={onClose}>
+      {loading && <div className="sheet-empty">取撤销清单中…</div>}
+      {error && <div className="preview-error">{error}</div>}
+      {!loading && !error && items.length === 0 && (
+        <div className="sheet-empty">还没有撤销清单。批准过移动计划后，清单会留在电脑上。</div>
+      )}
+      {items.map((item) => (
+        <div className="undo-row" key={item.plan_id}>
+          <div className="undo-main">
+            <div className="undo-head">
+              <span className={`undo-status ${item.status}`}>{UNDO_STATUS[item.status] ?? item.status}</span>
+              <span className="undo-time">{undoTime(item.created_at)}</span>
+            </div>
+            <div className="undo-moves">
+              {item.moves.map((m, i) => (
+                <div className="undo-move" key={`${m.from}:${i}`} title={`${m.from} → ${m.to}`}>
+                  {shortPath(m.from)} → {shortPath(m.to)}
+                </div>
+              ))}
+            </div>
+            {message[item.plan_id] && (
+              <div className={`undo-msg ${message[item.plan_id].level}`}>{message[item.plan_id].text}</div>
+            )}
+          </div>
+          {(item.status === "pending" || item.status === "partial") && (
+            <button className="btn" type="button" disabled={!!busy} onClick={() => void undo(item)}>
+              {busy === item.plan_id ? "撤销中…" : "撤销"}
+            </button>
+          )}
+        </div>
+      ))}
+      <div className="sheet-note">
+        只回滚移动；写过的文件不会改回。清单保存在电脑上，刷新页面后仍可在这里撤销。
+      </div>
     </Sheet>
   );
 }
