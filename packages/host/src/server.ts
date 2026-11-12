@@ -191,6 +191,11 @@ export interface HostOptions {
    */
   pcAppDetector?: () => Promise<PcAppInfo[]>;
   /**
+   * PC 配对二维码优先用 ~/.vance/tunnel-url.txt 的公网固定入口。
+   * 默认关闭，避免测试读到用户真实隧道；host-demo 打开。
+   */
+  pcPairPublic?: boolean;
+  /**
    * 用户交代给 Agent 的原话。
    *
    * 为什么放在 Host 而不是事件里：它不是 Agent 产生的事实，是"人说的话"。
@@ -1071,10 +1076,20 @@ export class HostServer {
   private async handlePcPair(req: IncomingMessage, res: ServerResponse): Promise<void> {
     if (this.pcReadOnly(req, res)) return;
     const port = this.port ?? this.options.port ?? 8787;
+    let publicBase = "";
+    if (this.options.pcPairPublic) {
+      try {
+        const saved = readFileSync(join(homedir(), ".vance", "tunnel-url.txt"), "utf8").trim();
+        const u = new URL(saved);
+        if (u.protocol === "https:") publicBase = `${u.protocol}//${u.host}`;
+      } catch {
+        /* 没有隧道文件就回局域网 */
+      }
+    }
     const entries = lanEntries(port).filter((e) => !/vEthernet|Loopback/i.test(e.iface));
     const preferred =
       entries.find((e) => /Wi-?Fi|WLAN|以太网|Ethernet/i.test(e.iface)) ?? entries[0];
-    const base = preferred?.url ?? `http://127.0.0.1:${port}`;
+    const base = publicBase || preferred?.url || `http://127.0.0.1:${port}`;
     const url = `${base.replace(/\/$/, "")}/app/#token=${encodeURIComponent(this.options.token)}`;
     try {
       const qr = await QRCode.toDataURL(url, {
@@ -1087,7 +1102,7 @@ export class HostServer {
         ok: true,
         url,
         qr,
-        mode: preferred ? "lan" : "localhost",
+        mode: publicBase ? "public" : preferred ? "lan" : "localhost",
         expires_at: null,
       });
     } catch {

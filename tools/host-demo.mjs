@@ -229,6 +229,7 @@ const host = new HostServer({
   artifactStoreFile: join(homedir(), ".vance", "artifacts.json"),
   policyFile: join(homedir(), ".vance", "policy.json"),
   undoDir: join(homedir(), ".vance", "undo"),
+  pcPairPublic: true,
   // 不启用 approveAllDevices：配对只走“首台自动信任 / 已记录设备”。
   // 临时免审批只留给单测，不在启动器里开。
 });

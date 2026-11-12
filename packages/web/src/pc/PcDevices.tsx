@@ -78,7 +78,11 @@ export function PcDevices({
                 <div className="pc-qr-wrap small">
                   <img className="pc-qr-image" src={snapshot.pair.qr} alt="配对二维码" />
                 </div>
-                <p>手机扫码后进入配对；二维码由本机 Host 生成。</p>
+                <p>
+                  {snapshot.pair.mode === "public"
+                    ? "手机扫码后进入配对；公网固定入口，流量也能扫。"
+                    : "手机扫码后进入配对；二维码由本机 Host 生成。"}
+                </p>
               </>
             ) : snapshot.demo ? (
               <>

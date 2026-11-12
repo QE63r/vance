@@ -172,7 +172,11 @@ export function PcApp() {
                       <img className="pc-qr-image" src={snapshot.pair.qr} alt="配对二维码" />
                     </div>
                     <div className="pc-pair-code">扫码后手机进入配对</div>
-                    <p>二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。</p>
+                    <p>
+                      {snapshot.pair.mode === "public"
+                        ? "公网固定入口，手机流量或同一 Wi-Fi 都能扫。"
+                        : "二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。"}
+                    </p>
                   </>
                 ) : (
                   <div className="pc-qr-empty compact">

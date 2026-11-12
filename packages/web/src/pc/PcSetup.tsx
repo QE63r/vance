@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { PcIcon } from "./PcIcon";
 import { PcQr } from "./PcQr";
 import type { PcMode, PcSnapshot } from "./pcData";
@@ -26,6 +26,10 @@ export function PcSetup({
     () => new Set(snapshot.apps.filter((a) => a.status !== "missing").map((a) => a.id)),
   );
   const [mode, setMode] = useState<PcMode>("remote");
+
+  useEffect(() => {
+    if (snapshot.pair?.mode === "public") setNetwork("wan");
+  }, [snapshot.pair?.mode]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -117,7 +121,11 @@ export function PcSetup({
                     <div className="pc-pair-code">
                       扫码后手机进入配对
                     </div>
-                    <p className="pc-qr-note">二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。</p>
+                    <p className="pc-qr-note">
+                      {snapshot.pair.mode === "public"
+                        ? "公网固定入口，手机流量或同一 Wi-Fi 都能扫。"
+                        : "二维码由本机 Host 生成；手机和电脑连同一个 Wi-Fi 时最稳。"}
+                    </p>
                   </>
                 ) : (
                   <div className="pc-qr-empty">
@@ -168,9 +176,11 @@ export function PcSetup({
                   </button>
                 </div>
                 <div className="pc-hint">
-                  {network === "lan"
-                    ? "手机和电脑连同一个 Wi-Fi 时，用这个地址最快。换网络后地址会变，重新扫码即可。"
-                    : "不在同一网络需要 Tailscale/中继；v1 先支持同一 Wi-Fi，公网入口还在接。"}
+                  {snapshot.pair?.mode === "public"
+                    ? "当前二维码是公网固定入口，手机用流量也能扫；同一 Wi-Fi 也可以。"
+                    : network === "lan"
+                      ? "手机和电脑连同一个 Wi-Fi 时，用这个地址最快。换网络后地址会变，重新扫码即可。"
+                      : "不在同一网络需要 Tailscale/中继；v1 先支持同一 Wi-Fi，公网入口还在接。"}
                 </div>
                 <div className="pc-trust-box">
                   <PcIcon name="lock" size={14} />
