@@ -876,7 +876,7 @@ button.chip {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.92);
+  background: #000;
 }
 
 .viewer-inner {
@@ -1598,12 +1598,14 @@ button.chip {
 
 /* ── 手机远控 ── */
 .viewer-remote {
-  max-width: 520px;
+  width: 100%;
+  max-width: none;
+  height: 100dvh;
   max-height: 100dvh;
   overflow: auto;
   background: #0b1017;
-  border: 1px solid #26313f;
-  border-radius: 12px;
+  border: 0;
+  border-radius: 0;
 }
 .remote-stage {
   position: relative;

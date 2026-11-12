@@ -14,6 +14,9 @@ import { homedir, tmpdir } from "node:os";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = dirname(HERE);
+// desktop shell 启动时 PATH 可能很干净；必须用绝对路径，不能靠 "powershell"。
+const POWERSHELL = join(process.env.SystemRoot ?? "C:\\Windows",
+  "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
 const PAGE = join(HERE, "..", "packages", "host", "public", "index.html");
 // 真前端的构建产物：默认用仓库里的 packages/web/dist，可用 VANCE_WEB_DIR 指到别处
 const WEB_DIR = process.env.VANCE_WEB_DIR ?? join(HERE, "..", "packages", "web", "dist");
@@ -325,7 +328,7 @@ let streamWatch = null;
 function ensureRemoteInput() {
   if (inputProc) return inputProc;
   inputProc = spawn(
-    "powershell",
+    POWERSHELL,
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "remote-input.ps1")],
     { stdio: ["pipe", "ignore", "ignore"], windowsHide: true },
   );
@@ -359,7 +362,7 @@ function startStreamer() {
     console.log("  ▶ 实时画面已开启（原生抓屏，目标 30 fps）");
   } else {
     streamer = spawn(
-      "powershell",
+      POWERSHELL,
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screen-stream.ps1"),
        "-Fps", "5", "-Width", "960", "-Quality", "55"],
       { stdio: ["ignore", "pipe", "ignore"] },
@@ -768,7 +771,7 @@ host.onScreenshot(async () => {
   try {
     await new Promise((resolve, reject) => {
       const ps = spawn(
-        "powershell",
+        POWERSHELL,
         ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screenshot.ps1"), "-Out", out],
         { stdio: "ignore" },
       );

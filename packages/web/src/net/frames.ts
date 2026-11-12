@@ -16,8 +16,12 @@ const listeners = new Set<() => void>();
 export function pushFrame(url: string): void {
   const prev = frame.url;
   frame = { url, at: Date.now(), frames: frame.frames + 1 };
-  if (prev && prev.startsWith("blob:")) URL.revokeObjectURL(prev);
   for (const fn of listeners) fn();
+  // 20fps 下立刻 revoke 可能把浏览器还没解码完的上一帧撤掉，画面会卡在某一帧。
+  // 留 2 秒给解码/绘制；最多几十个 blob，内存可接受。
+  if (prev && prev.startsWith("blob:")) {
+    window.setTimeout(() => URL.revokeObjectURL(prev), 2000);
+  }
 }
 
 export function getFrame(): Frame {
