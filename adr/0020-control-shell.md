@@ -1,6 +1,6 @@
 # ADR-0020：控制塔壳 v1（4 tab + 任务详情 + 内联对话）
 
-- 状态：**代码完成、文档收口；真机最终布局确认待补**（2026-11-12）
+- 状态：**代码、文档、真机验收完成**（2026-11-12）
 - 日期：2026-11-12
 - 关联：`docs/task-control-shell.md`、`docs/frontend-ia.md`、ADR-0013（交付物检阅）、
   ADR-0018（任务生命周期）、`packages/web/src/app/Shell.tsx`
