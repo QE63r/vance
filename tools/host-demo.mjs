@@ -242,7 +242,9 @@ const host = new HostServer({
   // 临时免审批只留给单测，不在启动器里开。
 });
 
-const externalTools = createBuiltinTools();
+const externalTools = createBuiltinTools((event) => {
+  console.log(`  [tool] ${event.tool} ${event.ok ? "ok" : event.code ?? "failed"} ${event.durationMs}ms`);
+});
 const EXTERNAL_TOOLS = externalTools.definitions();
 
 const externalKey = process.env.OPENAI_API_KEY ?? process.env.DEEPSEEK_API_KEY;

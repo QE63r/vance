@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createBuiltinTools } from "../src/index.js";
+import { createBuiltinTools, type ToolAuditEvent } from "../src/index.js";
 
 describe("builtin tool registry", () => {
   it("writes, reads and lists inside the workspace", async () => {
@@ -77,6 +77,30 @@ describe("builtin tool registry", () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("returns stable codes and audits every call", async () => {
+    const root = mkdtempSync(join(tmpdir(), "vance-tools-"));
+    try {
+      const audits: ToolAuditEvent[] = [];
+      const tools = createBuiltinTools((event) => audits.push(event));
+      const ctx = { workspaceRoot: root };
+
+      expect((await tools.execute("read_file", { path: "../x" }, ctx)).code).toBe("path_escape");
+      expect((await tools.execute("read_file", { path: "missing.txt" }, ctx)).code).toBe("not_found");
+      expect((await tools.execute("nope", {}, ctx)).code).toBe("unknown_tool");
+      expect((await tools.execute("write_file", { path: "a.txt", content: "ok" }, ctx)).ok).toBe(true);
+
+      expect(audits).toHaveLength(4);
+      expect(audits.map((event) => event.ok)).toEqual([false, false, false, true]);
+      expect(audits[0]?.code).toBe("path_escape");
+      expect(tools.names()).toContain("write_file");
+      expect(tools.unregister("write_file")).toBe(true);
+      expect(tools.get("write_file")).toBeUndefined();
+      expect(tools.names()).not.toContain("write_file");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
   });
 });

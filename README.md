@@ -171,7 +171,8 @@ same Host also advertises the OpenAI-compatible adapter and the console can swit
 between both. A reference tool registry (`read_file` / `list_dir` / `write_file`) is
 sandboxed to the workspace; writes go through an approval card. `examples/toy-agent`
 drives the same registry through a small agent loop and 10 deterministic fixtures.
-A general registry, shell tools, relay, push notifications, and packaging are not done.
+The registry emits stable error codes and audit events. A general registry, shell
+tools, relay, push notifications, and packaging are not done.
 
 The roadmap is about **safe tools and adapters**, not adding surface area:
 

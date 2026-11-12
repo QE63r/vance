@@ -29,6 +29,8 @@ export interface ToolCall {
 export interface ToolResult {
   ok: boolean;
   content: string;
+  /** Stable machine-readable error code when ok=false. */
+  code?: string;
 }
 
 export interface AgentAdapterHandlers {
