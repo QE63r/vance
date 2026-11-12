@@ -355,11 +355,11 @@ function startStreamer() {
   if (streamer) return;
   const native = join(HERE, "screen-capture.exe");
   if (existsSync(native)) {
-    streamer = spawn(native, ["-fps", "30", "-width", "640", "-quality", "45"], {
+    streamer = spawn(native, ["-fps", "24", "-width", "960", "-quality", "55"], {
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
     });
-    console.log("  ▶ 实时画面已开启（原生抓屏，目标 30 fps）");
+    console.log("  ▶ 实时画面已开启（原生抓屏 960 宽，目标 24 fps）");
   } else {
     streamer = spawn(
       POWERSHELL,

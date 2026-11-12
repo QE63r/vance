@@ -904,6 +904,11 @@ body {
   height: 100%;
   object-fit: cover;
 }
+.screen-panel canvas {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 .screen-empty {
   font-size: 9px;

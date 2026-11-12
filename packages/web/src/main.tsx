@@ -64,9 +64,21 @@ if (import.meta.env.DEV) {
 // 只在该构建的 /app/ 下注册；dev 不注册，免得 SW 缓存干扰热更新
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).catch(() => {
-      /* 注册失败仍可当普通网页用 */
-    });
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: "none" })
+      .then((registration) => {
+        // 新构建上线后让新 SW 接管，并自动刷新一次，避免手机上一直跑旧 JS。
+        registration.update().catch(() => undefined);
+        let reloading = false;
+        navigator.serviceWorker.addEventListener("controllerchange", () => {
+          if (reloading) return;
+          reloading = true;
+          window.location.reload();
+        });
+      })
+      .catch(() => {
+        /* 注册失败仍可当普通网页用 */
+      });
   });
 }
 }

@@ -13,6 +13,7 @@ import { send } from "../net/ws";
 export function ScreenPanel({ ready }: { ready: boolean }) {
   const frame = useSyncExternalStore(subscribeFrame, getFrame, getFrame);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const previewRef = useRef<HTMLCanvasElement | null>(null);
   const [open, setOpen] = useState(false);
   const [control, setControl] = useState(false);
   const [text, setText] = useState("");
@@ -24,20 +25,11 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
   const lastMove = useRef(0);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !frame.url) return;
-    let cancelled = false;
-    const image = new Image();
-    image.onload = () => {
-      if (cancelled) return;
-      canvas.width = image.naturalWidth;
-      canvas.height = image.naturalHeight;
-      canvas.getContext("2d")?.drawImage(image, 0, 0);
-    };
-    image.src = frame.url;
-    return () => {
-      cancelled = true;
-    };
+    return drawFrame(previewRef.current, frame.url);
+  }, [frame.url, open]);
+
+  useEffect(() => {
+    return drawFrame(canvasRef.current, frame.url);
   }, [frame.url, open]);
   const time = frame.at
     ? new Date(frame.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
@@ -122,7 +114,7 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
     <>
       <button className="screen-panel" type="button" onClick={() => setOpen(true)} aria-label="电脑画面">
         {frame.url ? (
-          <img src={frame.url} alt="电脑屏幕" />
+          <canvas ref={previewRef} aria-label="电脑屏幕" role="img" />
         ) : (
           <span className="screen-empty">还没有收到画面</span>
         )}
@@ -271,4 +263,20 @@ export function ScreenPanel({ ready }: { ready: boolean }) {
       )}
     </>
   );
+}
+
+function drawFrame(canvas: HTMLCanvasElement | null, url: string | null) {
+  if (!canvas || !url) return;
+  let cancelled = false;
+  const image = new Image();
+  image.onload = () => {
+    if (cancelled) return;
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    canvas.getContext("2d")?.drawImage(image, 0, 0);
+  };
+  image.src = url;
+  return () => {
+    cancelled = true;
+  };
 }
