@@ -5,6 +5,13 @@
 >
 > Vance is not an agent. It decides whether an agent may act.
 
+<p align="center">
+  <img src="assets/screenshots/overview.png" width="360" alt="Vance mobile overview with a pending write approval">
+  <img src="assets/screenshots/agents.png" width="360" alt="Vance mobile agent list with Executor and DeepSeek">
+</p>
+
+<sub>Screenshots use demo data; no tokens, personal files, or device identifiers.</sub>
+
 Vance sits beside an agent and answers one question:
 
 > **May this action run, and who approved it?**
