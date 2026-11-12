@@ -57,7 +57,7 @@ export function PcApp() {
       return;
     }
     if (app.action === "attach") {
-      flash(`${app.name}：窗口已发现；远控引擎下一步接。`);
+      flash(`${app.name}：窗口已发现；到手机「控制」页点「开始控制」。`);
       return;
     }
     flash(`${app.name}：打开入口待接。`);
@@ -109,7 +109,7 @@ export function PcApp() {
                       setQrOpen(true);
                       return;
                     }
-                    flash("远控引擎下一步接；当前已配对、已发现窗口。");
+                    flash("到手机梵境「控制」页点画面开始控制。");
                   }}
                   onRefresh={refresh}
                 />

@@ -61,6 +61,20 @@ interface HistoryEntry {
 /** 权限档位：只读 / 工作区 / 完全 */
 export type Profile = "read-only" | "workspace" | "full";
 
+/** PC 端远控输入：只接受归一化坐标和有限键位，不执行任意命令 */
+export type RemoteInput =
+  | {
+      type: "pointer";
+      action: "move" | "down" | "up" | "click" | "wheel";
+      x: number;
+      y: number;
+      button?: "left" | "right";
+      deltaY?: number;
+    }
+  | { type: "key"; key: string }
+  | { type: "text"; text: string }
+  | { type: "stop" };
+
 const PROFILES: Profile[] = ["read-only", "workspace", "full"];
 
 /** 「本轮产出」的结构化形状；前端产出区直接消费它，不再解析 notice 文案 */
@@ -322,6 +336,7 @@ export class HostServer {
   private sessionSwitchHandler: ((sessionId: string) => Promise<void>) | null = null;
   private turnState: "running" | "idle" | "stopped" = "idle";
   private shotHandler: (() => Promise<string | null>) | null = null;
+  private remoteInputHandler: ((input: RemoteInput) => void) | null = null;
   private readonly tokens: Set<string>;
   /**
    * 尚未被处理掉的审批请求。
@@ -661,6 +676,11 @@ export class HostServer {
   /** 手机要看一眼屏幕；返回 data URL，失败返回 null */
   onScreenshot(handler: () => Promise<string | null>): void {
     this.shotHandler = handler;
+  }
+
+  /** 手机远控输入；启动器负责真正注入鼠标/键盘 */
+  onRemoteInput(handler: (input: RemoteInput) => void): void {
+    this.remoteInputHandler = handler;
   }
 
   /** 注入规则读写口：启动器是规则的唯一持有者，host 不碰文件 */
@@ -2239,6 +2259,56 @@ export class HostServer {
     }
     if (msg?.type === "stop") {
       this.stopHandler?.();
+      return;
+    }
+    if (msg?.type === "remote_pointer") {
+      if (!this.remoteInputHandler) {
+        socket.send(JSON.stringify({ type: "notice", level: "deny", text: "远控输入未接" }));
+        return;
+      }
+      const action = msg.action;
+      const x = Number(msg.x);
+      const y = Number(msg.y);
+      if (
+        !["move", "down", "up", "click", "wheel"].includes(action) ||
+        !Number.isFinite(x) ||
+        !Number.isFinite(y)
+      ) {
+        socket.send(JSON.stringify({ type: "notice", level: "deny", text: "远控坐标无效" }));
+        return;
+      }
+      const input: RemoteInput = {
+        type: "pointer",
+        action,
+        x: Math.min(1, Math.max(0, x)),
+        y: Math.min(1, Math.max(0, y)),
+        ...(msg.button === "left" || msg.button === "right" ? { button: msg.button } : {}),
+        ...(Number.isFinite(Number(msg.deltaY)) ? { deltaY: Number(msg.deltaY) } : {}),
+      };
+      this.remoteInputHandler(input);
+      return;
+    }
+    if (msg?.type === "remote_key") {
+      if (!this.remoteInputHandler) return;
+      const allowed = new Set([
+        "Enter", "Backspace", "Escape", "Tab", "Delete",
+        "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+        "Home", "End", "PageUp", "PageDown",
+      ]);
+      if (typeof msg.key === "string" && allowed.has(msg.key)) {
+        this.remoteInputHandler({ type: "key", key: msg.key });
+      }
+      return;
+    }
+    if (msg?.type === "remote_text") {
+      if (!this.remoteInputHandler) return;
+      if (typeof msg.text === "string" && msg.text.trim()) {
+        this.remoteInputHandler({ type: "text", text: msg.text.slice(0, 2000) });
+      }
+      return;
+    }
+    if (msg?.type === "remote_stop") {
+      this.remoteInputHandler?.({ type: "stop" });
       return;
     }
     if (msg?.type === "screenshot") {

@@ -145,4 +145,15 @@ export type ClientMsg =
   | { type: "session/new" }
   | { type: "session/switch"; sessionId: string }
   | { type: "screenshot" }
+  | {
+      type: "remote_pointer";
+      action: "move" | "down" | "up" | "click" | "wheel";
+      x: number;
+      y: number;
+      button?: "left" | "right";
+      deltaY?: number;
+    }
+  | { type: "remote_key"; key: string }
+  | { type: "remote_text"; text: string }
+  | { type: "remote_stop" }
   | { type: "device_decision"; deviceId: string; allow: boolean };

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { HostServer, type Decision, type HostOptions } from "../src/index.js";
+import { HostServer, type Decision, type HostOptions, type RemoteInput } from "../src/index.js";
 
 const PAGE = fileURLToPath(new URL("../public/index.html", import.meta.url));
 
@@ -373,6 +373,30 @@ describe("PC 客户端本机接口", () => {
       headers: { "x-forwarded-for": "203.0.113.9" },
     });
     expect(blocked.status).toBe(403);
+  });
+});
+
+describe("远控输入", () => {
+  it("只转白名单输入，坐标夹到 0..1", async () => {
+    server = makeServer({ port: 0, token: "remote", pagePath: PAGE, approveAllDevices: true });
+    const seen: RemoteInput[] = [];
+    server.onRemoteInput((input) => seen.push(input));
+    const { port } = await server.start();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws?token=remote`);
+    await new Promise((r) => ws.on("open", r));
+
+    ws.send(JSON.stringify({ type: "remote_pointer", action: "click", x: 1.5, y: -1, button: "right" }));
+    ws.send(JSON.stringify({ type: "remote_key", key: "Enter" }));
+    ws.send(JSON.stringify({ type: "remote_key", key: "rm -rf" }));
+    ws.send(JSON.stringify({ type: "remote_text", text: "你好" }));
+    await new Promise((r) => setTimeout(r, 120));
+    ws.close();
+
+    expect(seen).toEqual([
+      { type: "pointer", action: "click", x: 1, y: 0, button: "right" },
+      { type: "key", key: "Enter" },
+      { type: "text", text: "你好" },
+    ]);
   });
 });
 

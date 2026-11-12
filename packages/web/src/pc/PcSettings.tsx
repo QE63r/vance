@@ -159,7 +159,7 @@ export function PcSettings({
             </div>
             <div className="pc-settings-note">
               <PcIcon name="lock" size={13} />
-              以上开关先落界面；远控引擎和一次性会话确认下一步接。
+              以上开关先落界面；手机「控制」页已支持实时画面与输入，远控会话确认下一步接。
             </div>
           </section>
 

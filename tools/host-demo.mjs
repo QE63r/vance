@@ -318,18 +318,45 @@ const { port, urls } = await host.start();
 
 // ── 实时画面：有手机连着才抓屏，没人看就停（不白烧 CPU） ──
 let streamer = null;
+let inputProc = null;
 let lastHash = "";
 let streamWatch = null;
+
+function ensureRemoteInput() {
+  if (inputProc) return inputProc;
+  inputProc = spawn(
+    "powershell",
+    ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "remote-input.ps1")],
+    { stdio: ["pipe", "ignore", "ignore"], windowsHide: true },
+  );
+  inputProc.on("exit", () => {
+    inputProc = null;
+  });
+  inputProc.on("error", () => {
+    inputProc = null;
+  });
+  console.log("  ▶ 远控输入已接（鼠标/键盘）");
+  return inputProc;
+}
+
+host.onRemoteInput((input) => {
+  const proc = ensureRemoteInput();
+  try {
+    proc.stdin.write(JSON.stringify(input) + "\n");
+  } catch {
+    inputProc = null;
+  }
+});
 
 function startStreamer() {
   if (streamer) return;
   streamer = spawn(
     "powershell",
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(HERE, "screen-stream.ps1"),
-     "-Fps", "2", "-Width", "800", "-Quality", "45"],
+     "-Fps", "5", "-Width", "960", "-Quality", "55"],
     { stdio: ["ignore", "pipe", "ignore"] },
   );
-  console.log("  ▶ 实时画面已开启（2 fps）");
+  console.log("  ▶ 实时画面已开启（5 fps）");
 
   let buf = Buffer.alloc(0);
   streamer.stdout.on("data", (chunk) => {

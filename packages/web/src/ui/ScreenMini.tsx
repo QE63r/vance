@@ -12,8 +12,7 @@ export function ScreenMini({ ready }: { ready: boolean }) {
       <button className={`mini ${frame.url ? "has-frame" : ""}`} type="button" onClick={() => setOpen(true)} aria-label="电脑画面">
         {frame.url ? <img src={frame.url} alt="电脑屏幕" /> : <span className="mini-empty">等待画面</span>}
         {!ready && <span className="mini-stale">{frame.at ? `已过期 · ${time}` : "未连接"}</span>}
-        {ready && frame.url && <span className="mini-badge">实时</span>}
-        {frame.url && ready && frame.frames > 0 && <span className="mini-live" />}
+        {ready && frame.url && <span className="mini-badge">实时</span>}        {frame.url && ready && frame.frames > 0 && <span className="mini-live" />}
       </button>
 
       {open && (
