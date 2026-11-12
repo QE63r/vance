@@ -1,9 +1,14 @@
-﻿node_modules/
+node_modules/
 dist/
 .turbo/
 packages/desktop/bin/
 packages/desktop/obj/
 labs/remote/tools/screen-capture.exe
+assets/icon/
+assets/icon-size-comparison.png
+assets/overview-*.png
+assets/pc-*.png
+assets/phone-*.png
 *.log
 .DS_Store
 .env
