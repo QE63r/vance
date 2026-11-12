@@ -949,8 +949,8 @@ export class HostServer {
   /** 广播一帧屏幕画面（二进制 JPEG，不走 JSON，省 33% 体积） */
   broadcastFrame(frame: Buffer): void {
     for (const client of this.clients) {
-      // 慢客户端不能把帧无限堆在 ws 缓冲里；丢旧帧，保实时。
-      if (client.readyState === client.OPEN && client.bufferedAmount < 1_000_000) {
+      // 慢客户端不能把帧无限堆在 ws 缓冲里；最多留 2 帧，超了就丢旧帧保实时。
+      if (client.readyState === client.OPEN && client.bufferedAmount < 100_000) {
         client.send(frame, { binary: true });
       }
     }
