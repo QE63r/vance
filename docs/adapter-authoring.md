@@ -43,6 +43,13 @@ The OpenAI-compatible adapter supports tool calls. The host receives `onToolCall
 turns the call into an `approval_request`, waits for the phone's decision, executes
 the approved tool, and returns the result to the model.
 
-The reference host currently exposes one tool, `write_file`, restricted to the
-workspace. A general tool registry, path policy, and shell tools are next. An adapter
-must never execute a tool before the host approves it.
+The reference host uses `@vance/tool-registry`:
+
+- `read_file` / `list_dir` (read, sandboxed)
+- `write_file` (write, needs approval)
+- all paths stay inside the workspace; 200KB cap; no shell tool
+
+The host turns write calls into `approval_request`, waits for the phone's decision,
+executes only after approval, and returns the result to the model. A general tool
+registry, richer path policy, and shell tools are next. An adapter must never execute
+a tool before the host approves it.

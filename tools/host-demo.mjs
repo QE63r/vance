@@ -2,13 +2,14 @@
 // 启动后终端会打印一个地址，手机连同一个 wifi 打开即可。
 import { createHash, randomBytes } from "node:crypto";
 import { execSync, execFileSync, spawn } from "node:child_process";
-import { basename, dirname, extname, join, relative, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostServer, lanEntries } from "../packages/host/dist/index.js";
 import qrcode from "qrcode-terminal";
 import QRCode from "qrcode";
 import { AcpClient, explainAction } from "../packages/adapter-opencode/dist/index.js";
 import { OpenAICompatibleAdapter } from "../packages/adapter-openai-compatible/dist/index.js";
+import { createBuiltinTools } from "../packages/tool-registry/dist/index.js";
 import { classifyApproval, treatKey } from "../packages/policy/dist/index.js";
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -241,23 +242,8 @@ const host = new HostServer({
   // 临时免审批只留给单测，不在启动器里开。
 });
 
-const EXTERNAL_TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "write_file",
-      description: "Write a UTF-8 text file inside the current workspace. Requires human approval.",
-      parameters: {
-        type: "object",
-        properties: {
-          path: { type: "string", description: "Path relative to the workspace" },
-          content: { type: "string", description: "UTF-8 content" },
-        },
-        required: ["path", "content"],
-      },
-    },
-  },
-];
+const externalTools = createBuiltinTools();
+const EXTERNAL_TOOLS = externalTools.definitions();
 
 const externalKey = process.env.OPENAI_API_KEY ?? process.env.DEEPSEEK_API_KEY;
 const externalModel = process.env.OPENAI_MODEL ?? "deepseek-chat";
@@ -272,7 +258,8 @@ if (externalKey) {
       baseUrl: externalBaseUrl,
       apiKey: externalKey,
       model: externalModel,
-      systemPrompt: "You are the external AI agent inside Vance. Be concise. Use write_file only when asked to create a file.",
+      systemPrompt:
+        "You are the external AI agent inside Vance. Be concise. Use read_file, list_dir, and write_file only when needed. Writes require human approval.",
       tools: EXTERNAL_TOOLS,
     },
     {
@@ -289,32 +276,31 @@ if (externalKey) {
   await externalAdapter.start();
 }
 
-
-/** 外部模型的唯一工具：写入 workspace，必须先经过 approval_request。 */
+/** 外部模型的工具：统一走 tool-registry；写操作先过 approval_request。 */
 async function runExternalTool(call) {
-  if (call.name !== "write_file") {
-    return { ok: false, content: `Unknown tool: ${call.name}` };
-  }
+  const spec = externalTools.get(call.name);
+  if (!spec) return { ok: false, content: `Unknown tool: ${call.name}` };
+
   let args;
   try {
     args = JSON.parse(call.arguments || "{}");
   } catch {
     return { ok: false, content: "Invalid tool arguments" };
   }
-  const path = typeof args?.path === "string" ? args.path : "";
-  const content = typeof args?.content === "string" ? args.content : "";
-  if (!path || content.length > 200_000) {
-    return { ok: false, content: "path is required and content must be <= 200KB" };
-  }
-  const target = resolve(CWD, path);
+  const values = args && typeof args === "object" ? args : {};
+  const rawPath = typeof values.path === "string" && values.path ? values.path : ".";
+  if (isAbsolute(rawPath)) return { ok: false, content: "path must be relative" };
+  const target = resolve(CWD, rawPath);
   const rel = relative(CWD, target);
-  if (rel.startsWith("..") || rel === "" || rel.includes("\0")) {
+  if (rel.startsWith("..") || isAbsolute(rel)) {
     return { ok: false, content: "path must stay inside the workspace" };
   }
 
-  const raw = JSON.stringify({ tool: "write_file", path: rel, content });
+  const risk = spec.risk;
+  const raw = JSON.stringify({ tool: call.name, args });
   const digest = createHash("sha256").update(raw).digest("hex");
   const requestId = `ext_${randomBytes(8).toString("hex")}`;
+  const content = typeof values.content === "string" ? values.content : "";
   const event = {
     type: "approval_request",
     request_id: requestId,
@@ -328,9 +314,12 @@ async function runExternalTool(call) {
     policy_version: "v1",
     signer: "host:local",
     signature: "unsigned",
-    action_display: `write_file("${rel}")`,
-    facts: { kind: "edit", effect: "write", writes: [target] },
-    preview: content.slice(0, 2000),
+    action_display: `${call.name}("${rel}")`,
+    facts:
+      risk === "write"
+        ? { kind: "edit", effect: "write", writes: [target] }
+        : { kind: "read", effect: "read", reads: [target] },
+    ...(risk === "write" ? { preview: content.slice(0, 2000) } : {}),
   };
 
   const verdict = classifyApproval(event, {
@@ -355,15 +344,12 @@ async function runExternalTool(call) {
   }
   if (!allowed) return { ok: false, content: "Denied by user" };
 
-  try {
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, content);
+  const result = await externalTools.execute(call.name, args, { workspaceRoot: CWD });
+  if (result.ok && risk === "write") {
     console.log(`  ✎ 外部 AI 写入：${rel}`);
     host.broadcastNotice("auto", `外部 AI 已写入：${rel}`);
-    return { ok: true, content: `Wrote ${Buffer.byteLength(content)} bytes to ${rel}` };
-  } catch (err) {
-    return { ok: false, content: `Write failed: ${String(err)}` };
   }
+  return result;
 }
 
 host.setAgents(

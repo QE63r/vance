@@ -94,6 +94,7 @@ packages/
   adapter-sdk/       AgentAdapter interface (start/prompt/cancel/close)
   adapter-opencode/  ACP adapter (integrated)
   adapter-openai-compatible/  OpenAI-compatible chat adapter (DeepSeek/Ark)
+  tool-registry/     sandboxed read_file / list_dir / write_file
   policy/            deterministic policy engine
   host/              local host: HTTP + WS + device pairing
   web/               reference mobile console (PWA)
@@ -157,13 +158,13 @@ in `examples/openai-compatible-host.mjs`.
 **v0.1 alpha** — the approval core and reference console are usable; the ecosystem is
 not. The ACP adapter (opencode) is integrated. When `OPENAI_API_KEY` is configured, the
 same Host also advertises the OpenAI-compatible adapter and the console can switch
-between both. A reference tool-call path (`write_file`) goes through an approval card
-before writing; a general tool registry is not built yet. Relay, push notifications,
-and packaging are not done.
+between both. A reference tool registry (`read_file` / `list_dir` / `write_file`) is
+sandboxed to the workspace; writes go through an approval card. A general registry,
+shell tools, relay, push notifications, and packaging are not done.
 
-The roadmap is about **adding adapters and safe tools**, not adding surface area:
+The roadmap is about **safe tools and adapters**, not adding surface area:
 
-1. General tool registry + path/permission rules
+1. Tool registry hardening + tests
 2. Relay + push, then packaging
 
 ---
